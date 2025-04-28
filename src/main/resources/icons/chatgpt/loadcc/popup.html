@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Load Data</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            width: 220px;
+            padding: 20px;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 16px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        input {
+            margin-top: 10px;
+            padding: 5px;
+            width: 80px;
+            text-align: center;
+        }
+        #captcha-container {
+            margin-top: 15px;
+            font-size: 16px;
+        }
+        #status {
+            margin-top: 10px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h3>NT Load ChatGPT</h3>
+    <div id="captcha-container">
+        <span id="captcha-question"></span>
+        <input type="number" id="captcha-answer" placeholder="kết quả">
+    </div>
+
+    <button id="loadCookieBtn">Mở ChatGPT</button>
+    <p id="status"></p>
+
+    <script src="popup.js"></script>
+</body>
+</html>

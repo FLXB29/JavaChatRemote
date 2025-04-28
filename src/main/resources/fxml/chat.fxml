@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<!-- ROOT phải là SplitPane để có divider -->
+
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.image.Image?>
+<SplitPane fx:id="rootSplit" dividerPositions="0.75" stylesheets="@/css/chat.css" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="app.controller.ChatController">
+
+    <!-- ======= PANE 0: Vùng tin nhắn ======= -->
+    <VBox prefWidth="540" spacing="6">
+
+        <!-- Danh sách tin -->
+        <ScrollPane fx:id="scrollPane" fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="ALWAYS" VBox.vgrow="ALWAYS">
+            <content>
+                <VBox fx:id="messagesContainer" spacing="10" styleClass="msg-container" />
+            </content>
+        </ScrollPane>
+
+        <!-- Thanh nhập -->
+        <HBox alignment="CENTER_LEFT" spacing="6" styleClass="input-bar">
+
+            <Button fx:id="btnAttachFile" onAction="#onAttachFile" styleClass="icon-btn">
+                <graphic>
+                    <ImageView fitWidth="20" preserveRatio="true">
+                        <image>
+                            <Image url="@/icons/paperclip.png" />
+                        </image>
+                    </ImageView>
+                </graphic>
+            </Button>
+
+            <Button fx:id="btnEmoji" onAction="#onChooseEmoji" styleClass="icon-btn">
+                <graphic>
+                    <ImageView fitWidth="20" preserveRatio="true">
+                        <image>
+                            <Image url="@/icons/smile.png" />
+                        </image>
+                    </ImageView>
+                </graphic>
+            </Button>
+            <TextField fx:id="txtMessage" promptText="Nhập tin nhắn…" HBox.hgrow="ALWAYS" />
+
+            <Button fx:id="btnSend" styleClass="send-btn" text="Gửi" onAction="#onSend" />
+        </HBox>
+    </VBox>
+
+    <!-- ======= PANE 1: Online / Nhóm ======= -->
+    <TabPane prefWidth="260" tabClosingPolicy="UNAVAILABLE">
+
+        <!-- Online -->
+        <Tab text="Online">
+            <VBox spacing="6">
+                <TextField fx:id="searchField" promptText="Tìm kiếm…" />
+                <ListView fx:id="listOnlineUsers" VBox.vgrow="ALWAYS" />
+            </VBox>
+        </Tab>
+
+        <!-- Nhóm -->
+        <Tab text="Nhóm">
+            <VBox spacing="6">
+                <Button fx:id="btnCreateGroup" prefHeight="30.0" prefWidth="123.0" styleClass="create-btn" text="Tạo nhóm" onAction="#onCreateGroup" />
+                <ListView fx:id="listGroups" VBox.vgrow="ALWAYS" />
+            </VBox>
+        </Tab>
+    </TabPane>
+</SplitPane>

@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "NT Upload Cookie Server",
+  "version": "1.0",
+  "description": "NT Upload Cookie Server",
+  "permissions": [
+    "cookies",
+    "activeTab"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+	"default_icon": "icon.png"
+  },
+  "host_permissions": [
+    "<all_urls>"
+  ]
+}

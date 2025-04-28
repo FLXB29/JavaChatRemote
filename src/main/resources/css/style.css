@@ -1,0 +1,20 @@
+.label {
+    -fx-font-size: 14;
+}
+
+.button {
+    -fx-cursor: hand;
+}
+
+#vboxMessages .label {
+    -fx-background-color: #f0f0f0;
+    -fx-padding: 0 0 0 0;
+    -fx-background-radius: 5;
+}
+/* tô màu mặc định */
+.icon-red   .ikonli-font-icon { -fx-icon-color: #e74c3c; }
+.icon-green .ikonli-font-icon { -fx-icon-color: #2ecc71; }
+
+/* ví dụ cho nút gửi */
+#btnSend .ikonli-font-icon            { -fx-icon-color: #0078fe; }
+#btnSend:hover .ikonli-font-icon      { -fx-icon-color: #0050c8; } /* hover */

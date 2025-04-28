@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import java.lang.*?>
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<StackPane alignment="CENTER" prefHeight="420" prefWidth="430" styleClass="bg-auth" stylesheets="@/css/auth.css" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="app.controller.LoginController">
+
+    <VBox alignment="CENTER" maxHeight="360" maxWidth="340" spacing="14" styleClass="card-auth">
+
+        <!-- accent xanh -->
+        <Pane maxWidth="Infinity" stylesheets="@../css/auth.css">
+         <styleClass>
+            <String fx:value="accent-login" />
+            <String fx:value="card-accent" />
+         </styleClass></Pane>
+
+        <Label styleClass="title" text="Đăng nhập" />
+
+        <TextField fx:id="txtUsername" promptText="Tên người dùng" />
+        <PasswordField fx:id="txtPassword" promptText="Mật khẩu" />
+
+        <Button fx:id="btnLogin" maxWidth="Infinity" onAction="#onLogin" styleClass="btn-login" text="Đăng nhập" />
+
+        <Label fx:id="lblStatus" textFill="#ef476f" />
+
+        <HBox alignment="CENTER" spacing="4">
+            <Label text="Chưa có tài khoản?" />
+            <Hyperlink fx:id="btnGoRegister" onAction="#onGoRegister" styleClass="btn-secondary" text="Đăng ký" />
+        </HBox>
+    </VBox>
+</StackPane>

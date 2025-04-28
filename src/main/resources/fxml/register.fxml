@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.control.*?>
+
+<StackPane fx:controller="app.controller.RegisterController"
+           xmlns="http://javafx.com/javafx"
+           xmlns:fx="http://javafx.com/fxml"
+           stylesheets="@/css/auth.css"
+           styleClass="bg-auth"
+           alignment="CENTER"
+           prefWidth="430" prefHeight="420">
+
+    <VBox styleClass="card-auth"
+          alignment="CENTER"
+          spacing="14"
+          maxWidth="340"
+          maxHeight="360">
+
+        <Pane styleClass="card-accent accent-register"
+              maxWidth="Infinity"/>
+
+        <Label text="Đăng ký" styleClass="title"/>
+
+        <TextField     fx:id="txtUsername"   promptText="Tên người dùng"/>
+        <StackPane>
+            <PasswordField fx:id="txtPassword"      promptText="Mật khẩu"
+                           StackPane.alignment="CENTER_LEFT"/>
+            <TextField     fx:id="txtPasswordPlain" promptText="Mật khẩu"
+                           managed="false" visible="false"
+                           StackPane.alignment="CENTER_LEFT"/>
+            <Button fx:id="btnShowPass" text="👁"
+                    onAction="#togglePassword"
+                    styleClass="eye-btn"
+                    StackPane.alignment="CENTER_RIGHT"/>
+        </StackPane>
+        <PasswordField fx:id="txtConfirm" promptText="Nhập lại mật khẩu"/>
+
+        <Button fx:id="btnRegister" text="Tạo tài khoản"
+                onAction="#onRegister"
+                maxWidth="Infinity"
+                styleClass="btn-register"/>
+
+        <Label fx:id="lblStatus" textFill="#ef476f"/>
+
+        <HBox alignment="CENTER" spacing="4">
+            <Label text="Đã có tài khoản?"/>
+            <Hyperlink fx:id="btnGoLogin" text="Đăng nhập"
+                       onAction="#onGoLogin"
+                       styleClass="btn-secondary"/>
+        </HBox>
+    </VBox>
+</StackPane>
