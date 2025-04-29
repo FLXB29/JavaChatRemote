@@ -554,16 +554,28 @@ public class ChatController {
                 conversationId = conv != null ? conv.getId() : 0L;
             }
 
+            // Hiển thị thông báo đang gửi file
+            Platform.runLater(() -> {
+                Label loadingLabel = new Label("Đang gửi file...");
+                loadingLabel.setStyle("-fx-text-fill:#999999; -fx-font-style:italic;");
+                messagesContainer.getChildren().add(loadingLabel);
+            });
+
             // Gửi file với conversationId
             try {
-                // Tạo tin nhắn file format
-//                String fileMessage = String.format("[FILE]%s|%d", file.getName(), file.length());
-//                // Hiển thị cho người gửi
-//                displayMessage(currentUser, fileMessage, true, LocalDateTime.now());
                 // Gửi file
                 ServiceLocator.chat().sendFile(conversationId, file.getAbsolutePath());
+                
+                // Xóa thông báo đang gửi
+                Platform.runLater(() -> {
+                    messagesContainer.getChildren().remove(messagesContainer.getChildren().size() - 1);
+                });
             } catch (Exception e) {
                 e.printStackTrace();
+                // Xóa thông báo đang gửi
+                Platform.runLater(() -> {
+                    messagesContainer.getChildren().remove(messagesContainer.getChildren().size() - 1);
+                });
                 showError("Lỗi gửi file", e);
             }
         }
@@ -745,21 +757,32 @@ public class ChatController {
         VBox box = new VBox(6); box.setUserData(id);
         box.getStyleClass().addAll("file-message", out? "outgoing":"incoming");
 
+        // Kiểm tra nếu file là hình ảnh
+        boolean isImage = name.matches("(?i).+\\.(png|jpe?g|gif)");
+        
         /* thumbnail nếu có */
         byte[] pic = ServiceLocator.chat().getThumb(id);
         System.out.println("[UI] id="+id+" thumb? "+(pic!=null));
 
-        // Kiểm tra nếu file là hình ảnh
-        boolean isImage = name.matches("(?i).+\\.(png|jpe?g|gif)");
-        
         if(pic!=null){
             // Nếu đã có thumbnail trong cache, hiển thị ngay
             ImageView iv = new ImageView(new Image(new ByteArrayInputStream(pic)));
             iv.setFitWidth(260); iv.setPreserveRatio(true);
+            iv.setId("thumb"); // Đánh dấu để có thể cập nhật sau
             box.getChildren().add(iv);
         } else if(isImage) {
             // Nếu là hình ảnh nhưng chưa có thumbnail, yêu cầu từ server
-            ServiceLocator.chat().requestThumb(id);
+            // Kiểm tra xem đã yêu cầu thumbnail chưa để tránh yêu cầu trùng lặp
+            if(!ServiceLocator.chat().isThumbRequested(id)) {
+                ServiceLocator.chat().requestThumb(id);
+                System.out.println("[UI] Yêu cầu thumbnail cho file: " + id);
+            }
+            
+            // Hiển thị thông báo đang tải thumbnail
+            Label loadingLabel = new Label("Đang tải hình ảnh...");
+            loadingLabel.setStyle("-fx-text-fill: #999999; -fx-font-style: italic;");
+            loadingLabel.setId("loading-thumb");
+            box.getChildren().add(loadingLabel);
             
             // Tạm thời hiển thị file đầy đủ nếu có và nhỏ hơn 2MB
             if(size < 2*1024*1024) {
@@ -781,7 +804,7 @@ public class ChatController {
         HBox row = new HBox(box);
         row.setAlignment(out? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
         row.setSpacing(4);
-        fileBubbleMap.put(id, box);          // ⬅  thêm dòng này
+        fileBubbleMap.put(id, box);          // Lưu vào map để có thể cập nhật sau
 
         return row;
     }
@@ -845,9 +868,14 @@ public class ChatController {
             
             // Nếu là hình ảnh, đảm bảo yêu cầu thumbnail
             boolean isImage = fileName.matches("(?i).+\\.(png|jpe?g|gif)");
-            if(isImage && ServiceLocator.chat().getThumb(key) == null) {
+            if(isImage) {
                 // Yêu cầu thumbnail từ server nếu chưa có
-                ServiceLocator.chat().requestThumb(key);
+                if(ServiceLocator.chat().getThumb(key) == null) {
+                    System.out.println("[UI] Yêu cầu thumbnail cho file: " + key);
+                    ServiceLocator.chat().requestThumb(key);
+                } else {
+                    System.out.println("[UI] Đã có thumbnail cho file: " + key);
+                }
             }
         } else {
             msgNode = buildMsgNode(content, isOutgoing);
@@ -870,6 +898,12 @@ public class ChatController {
         VBox box = fileBubbleMap.get(id);
         if(box == null) return;                    // chưa kịp vẽ bubble
 
+        // Xóa thông báo đang tải nếu có
+        Node loadingLabel = box.lookup("#loading-thumb");
+        if(loadingLabel != null) {
+            box.getChildren().remove(loadingLabel);
+        }
+
         // Kiểm tra xem đã có thumbnail chưa
         Node existingThumb = box.lookup("#thumb");
         if(existingThumb != null) {
@@ -878,18 +912,34 @@ public class ChatController {
         }
 
         byte[] data = ServiceLocator.chat().getThumb(id);
-        if(data == null) return;
+        if(data == null) {
+            // Nếu không nhận được thumbnail, hiển thị thông báo lỗi
+            Label errorLabel = new Label("Không thể tải hình ảnh");
+            errorLabel.setStyle("-fx-text-fill: #ff4444; -fx-font-style: italic;");
+            errorLabel.setId("thumb-error");
+            box.getChildren().add(0, errorLabel);
+            return;
+        }
 
-        // Tạo và hiển thị thumbnail mới
-        ImageView iv = new ImageView(new Image(new ByteArrayInputStream(data)));
-        iv.setId("thumb");
-        iv.setFitWidth(260); iv.setPreserveRatio(true);
+        try {
+            // Tạo và hiển thị thumbnail mới
+            ImageView iv = new ImageView(new Image(new ByteArrayInputStream(data)));
+            iv.setId("thumb");
+            iv.setFitWidth(260); iv.setPreserveRatio(true);
 
-        // Chèn thumbnail vào đầu danh sách con
-        box.getChildren().add(0, iv);
-        box.requestLayout();
-        
-        System.out.println("[UI] Đã cập nhật thumbnail cho file: " + id);
+            // Chèn thumbnail vào đầu danh sách con
+            box.getChildren().add(0, iv);
+            box.requestLayout();
+            
+            System.out.println("[UI] Đã cập nhật thumbnail cho file: " + id);
+        } catch (Exception e) {
+            // Nếu có lỗi khi tạo ImageView, hiển thị thông báo lỗi
+            Label errorLabel = new Label("Lỗi hiển thị hình ảnh");
+            errorLabel.setStyle("-fx-text-fill: #ff4444; -fx-font-style: italic;");
+            errorLabel.setId("thumb-error");
+            box.getChildren().add(0, errorLabel);
+            System.out.println("[UI] Lỗi hiển thị thumbnail cho file: " + id + ", lỗi: " + e.getMessage());
+        }
     }
 
     /*  tiện ích bọc node tin-nhắn vào một dòng HBox  */

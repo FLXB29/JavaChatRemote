@@ -30,6 +30,7 @@ public class ChatService {
     private ClientConnection client;
     private final Map<String, byte[]> fileCache = new ConcurrentHashMap<>();
     private final Map<String, byte[]> thumbCache = new ConcurrentHashMap<>();   // ➕
+    private final Set<String> thumbRequested = ConcurrentHashMap.newKeySet();    // ➕ Theo dõi các yêu cầu thumbnail
 
     private final Set<String> shownFileIds =
             java.util.concurrent.ConcurrentHashMap.newKeySet();   // ➊
@@ -43,13 +44,10 @@ public class ChatService {
     // Hoặc bạn tìm conversation theo ID, username,... tuỳ ý
     private Conversation currentConversation;
 
-
     public ChatService() {
         // Tạo client
         client = new ClientConnection("localhost", 5555);
         client.connect();
-
-
 
         // Lắng nghe callback khi nhận tin nhắn
         client.setOnTextReceived((from, text) -> {
@@ -98,16 +96,11 @@ public class ChatService {
             }
         });
 
-
-
-
         client.setOnFileThumb((id,bytes)->{
             System.out.println("[RECV_THUMB] "+id+" bytes="+bytes.length);
             thumbCache.put(id, bytes);
             Platform.runLater(() -> chatUI.refreshThumbnail(id));
         });
-
-
 
         client.setOnFileChunk((id,seq,last,data) -> {
             downloading
@@ -116,15 +109,12 @@ public class ChatService {
             if(last){
                 byte[] all = downloading.remove(id).toByteArray();
                 fileCache.put(id, all);            // vào RAM cache
-                // tuỳ ý: popup “Đã tải xong …”
+                // tuỳ ý: popup "Đã tải xong ..."
             }
         });
-
     }
 
-
-
-        public void bindUI(ChatController ui) {
+    public void bindUI(ChatController ui) {
         this.chatUI = ui;
     }
 
@@ -141,7 +131,6 @@ public class ChatService {
     public void sendMessage(String fromUser, String text) {
         // 1) Gửi tin qua socket
         client.sendText(text);
-
     }
     public void download(String id){
         client.requestFile(id);
@@ -150,8 +139,6 @@ public class ChatService {
     public boolean hasFile(String id){          // ❶ kiểm tra đã cache chưa
         return fileCache.containsKey(id);
     }
-
-
 
     public void sendFile(long convId, String path){
         try {
@@ -176,7 +163,6 @@ public class ChatService {
         } catch (IOException ex) { ex.printStackTrace(); }
     }
 
-
     public List<MessageDTO> getHistory() {
         return messageHistory;
     }
@@ -199,9 +185,14 @@ public class ChatService {
         this.client = client;
     }
     public byte[]  getThumb(String id){ return thumbCache.get(id);}            // ➕
-    public void requestThumb(String id){
-        System.out.println("[REQ_THUMB] "+id);      // DEBUG
+    public boolean isThumbRequested(String id) {
+        return thumbRequested.contains(id);
+    }
 
-        client.requestThumb(id);      // ✔ dùng wrapper vừa thêm
+    public void requestThumb(String id) {
+        if (!thumbRequested.contains(id)) {
+            thumbRequested.add(id);
+            client.requestThumb(id);
+        }
     }
 }
