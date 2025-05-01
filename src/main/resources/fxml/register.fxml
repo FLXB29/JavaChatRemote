@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <?import javafx.scene.layout.*?>
 <?import javafx.scene.control.*?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.image.Image?>
+<?import javafx.geometry.Insets?>
 
 <StackPane fx:controller="app.controller.RegisterController"
            xmlns="http://javafx.com/javafx"
@@ -8,39 +11,55 @@
            stylesheets="@/css/auth.css"
            styleClass="bg-auth"
            alignment="CENTER"
-           prefWidth="430" prefHeight="420">
+           prefWidth="500" prefHeight="600">
 
     <VBox styleClass="card-auth"
           alignment="CENTER"
-          spacing="14"
-          maxWidth="340"
-          maxHeight="360">
+          spacing="16"
+          maxWidth="400"
+          maxHeight="500">
 
         <Pane styleClass="card-accent accent-register"
               maxWidth="Infinity"/>
 
-        <Label text="Đăng ký" styleClass="title"/>
+        <Label text="Đăng ký tài khoản" styleClass="title"/>
 
-        <TextField     fx:id="txtUsername"   promptText="Tên người dùng"/>
-        <StackPane>
-            <PasswordField fx:id="txtPassword"      promptText="Mật khẩu"
-                           StackPane.alignment="CENTER_LEFT"/>
-            <TextField     fx:id="txtPasswordPlain" promptText="Mật khẩu"
+        <VBox spacing="4" maxWidth="Infinity">
+            <Label text="Tên người dùng" styleClass="field-label"/>
+            <TextField fx:id="txtUsername" promptText="Nhập tên người dùng"/>
+        </VBox>
+
+        <VBox spacing="4" maxWidth="Infinity">
+            <Label text="Email" styleClass="field-label"/>
+            <TextField fx:id="txtEmail" promptText="Nhập địa chỉ email"/>
+        </VBox>
+
+        <VBox spacing="4" maxWidth="Infinity">
+            <Label text="Mật khẩu" styleClass="field-label"/>
+            <StackPane>
+                <PasswordField fx:id="txtPassword" promptText="Nhập mật khẩu"
+                               StackPane.alignment="CENTER_LEFT"/>
+                <TextField fx:id="txtPasswordPlain" promptText="Nhập mật khẩu"
                            managed="false" visible="false"
                            StackPane.alignment="CENTER_LEFT"/>
-            <Button fx:id="btnShowPass" text="👁"
-                    onAction="#togglePassword"
-                    styleClass="eye-btn"
-                    StackPane.alignment="CENTER_RIGHT"/>
-        </StackPane>
-        <PasswordField fx:id="txtConfirm" promptText="Nhập lại mật khẩu"/>
+                <Button fx:id="btnShowPass" text="👁"
+                        onAction="#togglePassword"
+                        styleClass="eye-btn"
+                        StackPane.alignment="CENTER_RIGHT"/>
+            </StackPane>
+        </VBox>
 
-        <Button fx:id="btnRegister" text="Tạo tài khoản"
+        <VBox spacing="4" maxWidth="Infinity">
+            <Label text="Xác nhận mật khẩu" styleClass="field-label"/>
+            <PasswordField fx:id="txtConfirm" promptText="Nhập lại mật khẩu"/>
+        </VBox>
+
+        <Button fx:id="btnRegister" text="Đăng ký"
                 onAction="#onRegister"
                 maxWidth="Infinity"
                 styleClass="btn-register"/>
 
-        <Label fx:id="lblStatus" textFill="#ef476f"/>
+        <Label fx:id="lblStatus" textFill="#ef476f" styleClass="status-label"/>
 
         <HBox alignment="CENTER" spacing="4">
             <Label text="Đã có tài khoản?"/>

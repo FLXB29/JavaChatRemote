@@ -19,6 +19,19 @@ public class User {
     private String passwordHash; // BCrypt hash
 
     private String status; // "ONLINE", "OFFLINE", ...
+    
+    @Column(unique=true)
+    private String email; // Email cho xác thực hai yếu tố
+    
+    private String fullName; // Tên đầy đủ của người dùng
+    
+    private String avatarPath; // Đường dẫn đến avatar (nếu có)
+    
+    private boolean useDefaultAvatar; // Sử dụng avatar mặc định (hiển thị tên)
+    
+    private String otpCode; // Mã OTP tạm thời cho xác thực hai yếu tố
+    
+    private Long otpExpiryTime; // Thời gian hết hạn của mã OTP
 
     @OneToMany(mappedBy="user", cascade=CascadeType.ALL)
     private Set<Membership> memberships = new HashSet<>();
@@ -28,6 +41,7 @@ public class User {
     public User(String username, String passwordHash) {
         this.username = username;
         this.passwordHash = passwordHash;
+        this.useDefaultAvatar = true; // Mặc định sử dụng avatar hiển thị tên
     }
 
     // Chú ý: cần getter/setter cho passwordHash
@@ -69,6 +83,54 @@ public class User {
 
     public void setId(Long id) {
         this.id = id;
+    }
+    
+    public String getEmail() {
+        return email;
+    }
+    
+    public void setEmail(String email) {
+        this.email = email;
+    }
+    
+    public String getFullName() {
+        return fullName;
+    }
+    
+    public void setFullName(String fullName) {
+        this.fullName = fullName;
+    }
+    
+    public String getAvatarPath() {
+        return avatarPath;
+    }
+    
+    public void setAvatarPath(String avatarPath) {
+        this.avatarPath = avatarPath;
+    }
+    
+    public boolean isUseDefaultAvatar() {
+        return useDefaultAvatar;
+    }
+    
+    public void setUseDefaultAvatar(boolean useDefaultAvatar) {
+        this.useDefaultAvatar = useDefaultAvatar;
+    }
+    
+    public String getOtpCode() {
+        return otpCode;
+    }
+    
+    public void setOtpCode(String otpCode) {
+        this.otpCode = otpCode;
+    }
+    
+    public Long getOtpExpiryTime() {
+        return otpExpiryTime;
+    }
+    
+    public void setOtpExpiryTime(Long otpExpiryTime) {
+        this.otpExpiryTime = otpExpiryTime;
     }
 
     // ... getter, setter khác ...

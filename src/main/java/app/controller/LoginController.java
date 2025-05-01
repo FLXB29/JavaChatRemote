@@ -16,15 +16,39 @@ public class LoginController {
 
     @FXML private TextField txtUsername;
     @FXML private PasswordField txtPassword;
+    @FXML private TextField txtPasswordPlain;
     @FXML private Button btnLogin;
     @FXML private Hyperlink btnGoRegister;   // đổi Button ➜ Hyperlink
-
     @FXML private Label lblStatus;
+    @FXML private Button btnShowPass;
+
+    private boolean showing = false;
 
     @FXML
     public void initialize() {
         // Nếu cần làm gì sau khi FXML load thì làm ở đây
         lblStatus.setText("");
+    }
+
+    /* hiển/ẩn mật khẩu */
+    @FXML
+    private void togglePassword() {
+        showing = !showing;
+        if (showing) {
+            txtPasswordPlain.setText(txtPassword.getText());
+            txtPasswordPlain.setVisible(true);
+            txtPasswordPlain.setManaged(true);
+
+            txtPassword.setVisible(false);
+            txtPassword.setManaged(false);
+        } else {
+            txtPassword.setText(txtPasswordPlain.getText());
+            txtPassword.setVisible(true);
+            txtPassword.setManaged(true);
+
+            txtPasswordPlain.setVisible(false);
+            txtPasswordPlain.setManaged(false);
+        }
     }
 
     // Nhấn nút "Login"
@@ -34,7 +58,7 @@ public class LoginController {
         boolean okInput = validate(txtUsername) & validate(txtPassword);
         if (!okInput) return;
         String username = txtUsername.getText().trim();
-        String password = txtPassword.getText().trim();
+        String password = showing ? txtPasswordPlain.getText().trim() : txtPassword.getText().trim();
 
         UserService userService = ServiceLocator.userService();
         boolean ok = userService.login(username, password);
@@ -44,6 +68,7 @@ public class LoginController {
             goToChat(username);
         } else {
             lblStatus.setText("Sai tài khoản hoặc mật khẩu!");
+            lblStatus.setStyle("-fx-text-fill: #ef476f;"); // Màu đỏ
         }
     }
 

@@ -46,7 +46,7 @@ public class ChatService {
 
     public ChatService() {
         // Tạo client
-        client = new ClientConnection("localhost", 5555);
+        client = new ClientConnection();
         client.connect();
 
         // Lắng nghe callback khi nhận tin nhắn

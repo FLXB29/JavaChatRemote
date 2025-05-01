@@ -2,15 +2,39 @@
 
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
-
-<!-- ROOT phải là SplitPane để có divider -->
-
 <?import javafx.scene.image.ImageView?>
 <?import javafx.scene.image.Image?>
+<?import javafx.scene.shape.Circle?>
+<?import javafx.geometry.Insets?>
+
+<!-- ROOT phải là SplitPane để có divider -->
 <SplitPane fx:id="rootSplit" dividerPositions="0.75" stylesheets="@/css/chat.css" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="app.controller.ChatController">
 
     <!-- ======= PANE 0: Vùng tin nhắn ======= -->
     <VBox prefWidth="540" spacing="6">
+        
+        <!-- Header với avatar và nút cài đặt -->
+        <HBox alignment="CENTER_LEFT" spacing="10" styleClass="chat-header">
+            <StackPane>
+                <Circle fx:id="userAvatarCircle" radius="20" styleClass="avatar-circle"/>
+                <ImageView fx:id="userAvatarImage" fitWidth="40" fitHeight="40" preserveRatio="true"/>
+                <Label fx:id="userInitialLabel" styleClass="avatar-initial"/>
+            </StackPane>
+            
+            <Label fx:id="currentUserLabel" styleClass="current-user-label"/>
+            
+            <Region HBox.hgrow="ALWAYS"/>
+            
+            <Button fx:id="btnSettings" onAction="#onOpenSettings" styleClass="icon-btn">
+                <graphic>
+                    <ImageView fitWidth="20" preserveRatio="true">
+                        <image>
+                            <Image url="@/icons/settings.png" />
+                        </image>
+                    </ImageView>
+                </graphic>
+            </Button>
+        </HBox>
 
         <!-- Danh sách tin -->
         <ScrollPane fx:id="scrollPane" fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="ALWAYS" VBox.vgrow="ALWAYS">
@@ -47,7 +71,7 @@
         </HBox>
     </VBox>
 
-    <!-- ======= PANE 1: Online / Nhóm ======= -->
+    <!-- ======= PANE 1: Online / Nhóm ======= -->
     <TabPane prefWidth="260" tabClosingPolicy="UNAVAILABLE">
 
         <!-- Online -->

@@ -1,8 +1,23 @@
 package network;
 
+import app.model.User;
+import app.util.Config;
+import javafx.application.Platform;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.collections.transformation.FilteredList;
+import javafx.collections.transformation.SortedList;
+import javafx.scene.control.ListView;
+import javafx.scene.image.Image;
+
 import java.io.*;
 import java.net.Socket;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
@@ -13,6 +28,9 @@ public class ClientConnection {
     private Socket socket;
     private ObjectOutputStream out;
     private ObjectInputStream in;
+    private static final int SOCKET_TIMEOUT = 30000; // 30 seconds
+    private static final int MAX_RECONNECT_ATTEMPTS = 3;
+    private int reconnectAttempts = 0;
 
     // Callback khi nhận MSG(String from, String content)
     private BiConsumer<String, String> onTextReceived;
@@ -41,11 +59,25 @@ public class ClientConnection {
     private FileChunkConsumer onFileChunk;
     private FileThumbConsumer onFileThumb;     // ↔ setter ở dưới
 
+    private Map<String, User> onlineUsers;
+    private String currentUser;
+    private ListView<User> listOnlineUsers;
+
+    // Thêm callback cho sự kiện nhận avatar mới
+    private BiConsumer<String, byte[]> onAvatarUpdated;
+
+    public ClientConnection() {
+        this.host = Config.getClientHost();
+        this.port = Config.getClientPort();
+        this.onlineUsers = new HashMap<>();
+    }
 
     public ClientConnection(String host, int port) {
         this.host = host;
         this.port = port;
+        this.onlineUsers = new HashMap<>();
     }
+
     public interface OnConvJoinedHandler {
         void onJoined(long convId);
     }
@@ -55,11 +87,29 @@ public class ClientConnection {
     public void connect() {
         try {
             socket = new Socket(host, port);
-            out    = new ObjectOutputStream(socket.getOutputStream());
-            in     = new ObjectInputStream(socket.getInputStream());
+            socket.setSoTimeout(SOCKET_TIMEOUT);
+            out = new ObjectOutputStream(socket.getOutputStream());
+            in = new ObjectInputStream(socket.getInputStream());
+            reconnectAttempts = 0; // Reset reconnect attempts on successful connection
             new Thread(this::listen).start();
         } catch (IOException e) {
             e.printStackTrace();
+            handleConnectionError();
+        }
+    }
+
+    private void handleConnectionError() {
+        if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+            reconnectAttempts++;
+            System.out.println("Attempting to reconnect... (Attempt " + reconnectAttempts + ")");
+            try {
+                Thread.sleep(5000); // Wait 5 seconds before retrying
+                connect();
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+        } else {
+            System.out.println("Max reconnection attempts reached. Please check your connection.");
         }
     }
 
@@ -198,11 +248,30 @@ public class ClientConnection {
                         if(onFileThumb!=null)
                             onFileThumb.accept(id, p.payload());
                     }
+
+                    case AVATAR_DATA -> {
+                        String username = p.header();
+                        byte[] data = p.payload();
+                        
+                        // Lưu avatar vào cache
+                        Path cacheDir = Paths.get("avatar_cache");
+                        if(!Files.exists(cacheDir)) Files.createDirectories(cacheDir);
+                        
+                        Path file = cacheDir.resolve(username + ".png");
+                        Files.write(file, data);
+
+                        // Thông báo cho UI cập nhật qua callback
+                        if(onAvatarUpdated != null) {
+                            onAvatarUpdated.accept(username, data);
+                        }
+                    }
+
                     default -> {}
                 }
             }
         } catch (Exception e) {
-            System.out.println("Disconnected from server.");
+            System.out.println("Disconnected from server: " + e.getMessage());
+            handleConnectionError();
         }
     }
 
@@ -227,6 +296,17 @@ public class ClientConnection {
 
     public void sendGroup(long convId, String text){
         sendPacket(new Packet(PacketType.GROUP_MSG, String.valueOf(convId), text.getBytes()));
+    }
+
+    /* gửi avatar mới */
+    public void uploadAvatar(File f) throws IOException {
+        byte[] data = Files.readAllBytes(f.toPath());
+        sendPacket(new Packet(PacketType.AVATAR_UPLOAD, f.getName(), data));
+    }
+
+    /* xin avatar của 1 user khác */
+    public void requestAvatar(String username){
+        sendPacket(new Packet(PacketType.GET_AVATAR, username, null));
     }
     // Client yêu cầu server stream 1 file
     public void requestFile(String id){
@@ -265,6 +345,82 @@ public class ClientConnection {
     public void setOnFileChunk(FileChunkConsumer c){ this.onFileChunk = c; }
     public void setOnFileThumb(FileThumbConsumer c){ this.onFileThumb = c; }
 
+    public void setOnlineUsers(Map<String, User> onlineUsers) {
+        this.onlineUsers = onlineUsers;
+    }
+
+    public void setCurrentUser(String currentUser) {
+        this.currentUser = currentUser;
+    }
+
+    public void setListOnlineUsers(ListView<User> listOnlineUsers) {
+        this.listOnlineUsers = listOnlineUsers;
+    }
+
+    private void updateUserAvatar() {
+        if (currentUser != null && onlineUsers.containsKey(currentUser)) {
+            User currentUserObj = onlineUsers.get(currentUser);
+            Path avatarPath = Paths.get(currentUserObj.getAvatarPath());
+            if (Files.exists(avatarPath)) {
+                try {
+                    // Đọc file avatar thành byte[]
+                    byte[] avatarData = Files.readAllBytes(avatarPath);
+                    
+                    // Gọi callback để cập nhật UI
+                    if (onAvatarUpdated != null) {
+                        onAvatarUpdated.accept(currentUser, avatarData);
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    public void setOnAvatarUpdated(BiConsumer<String, byte[]> callback) {
+        this.onAvatarUpdated = callback;
+    }
+
+    // Phương thức để yêu cầu avatar của tất cả người dùng online
+    public void requestAllAvatars() {
+        if (onlineUsers != null) {
+            for (String username : onlineUsers.keySet()) {
+                if (!username.equals(currentUser)) {
+                    requestAvatar(username);
+                }
+            }
+        }
+    }
+
+    // Phương thức để xử lý khi nhận được avatar mới
+    private void handleNewAvatar(String username, byte[] data) {
+        try {
+            Path cacheDir = Paths.get("avatar_cache");
+            if (!Files.exists(cacheDir)) {
+                Files.createDirectories(cacheDir);
+            }
+
+            Path avatarFile = cacheDir.resolve(username + ".png");
+            Files.write(avatarFile, data);
+
+            Platform.runLater(() -> {
+                User user = onlineUsers.get(username);
+                if (user != null) {
+                    user.setAvatarPath(avatarFile.toString());
+                    user.setUseDefaultAvatar(false);
+                    if (listOnlineUsers != null) {
+                        listOnlineUsers.refresh();
+                    }
+                }
+                if (username.equals(currentUser)) {
+                    updateUserAvatar();
+                }
+            });
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
     // Define TriConsumer
     @FunctionalInterface
     public interface TriConsumer<A,B,C> {
@@ -284,5 +440,9 @@ public class ClientConnection {
     @FunctionalInterface
     public interface FileThumbConsumer{
         void accept(String id, byte[] data);
+    }
+
+    public void requestUserList() {
+        sendPacket(new Packet(PacketType.GET_USERLIST, "", null));
     }
 }

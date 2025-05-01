@@ -3,6 +3,7 @@ open module application.giaodien {
     requires javafx.controls;
     requires javafx.fxml;
     requires javafx.graphics;
+    requires javafx.swing;
 
     /* ────────── UI libs ────────── */
     requires org.kordamp.ikonli.core;
@@ -12,7 +13,22 @@ open module application.giaodien {
     requires org.hibernate.orm.core;
     requires jakarta.persistence;
     requires jakarta.transaction;
-    requires jakarta.cdi;
+    requires jakarta.inject;          // đã thêm API Inject trong POM
+    requires static jakarta.cdi;
+
+    /* ────────── Gửi mail ────────── */
+    requires jakarta.mail;            // ★ mới
+
+    /* ────────── Spring Framework ────────── */
+    requires spring.context;
+    requires spring.core;
+    requires spring.beans;
+    requires spring.aop;
+    requires spring.data.jpa;
+    requires spring.data.commons;
+    requires spring.jdbc;
+    requires spring.orm;
+    requires spring.tx;
 
     /* ────────── Khác ────────── */
     requires jbcrypt;
@@ -20,32 +36,19 @@ open module application.giaodien {
     requires com.google.gson;
     requires com.gluonhq.emoji;
     requires com.gluonhq.emoji.offline;
-    requires spring.data.jpa;
-    requires spring.data.commons;
-    requires spring.context;
-    requires spring.jdbc;
-    requires spring.orm;
-    requires spring.tx;// thêm dòng này
-    requires spring.core;
-    requires spring.aop;            //  (proxy CGLIB thường dùng AOP) – thêm luôn cho chắc// ←  THÊM DÒNG NÀY
-    requires spring.beans;
     requires com.fasterxml.jackson.annotation;
     requires java.desktop;
-    requires net.coobird.thumbnailator;          //  ★  THÊM DÒNG NÀY
-
-
+    requires net.coobird.thumbnailator;
 
     /* ================== EXPORT ================== */
     exports application.giaodien;
     exports app;
+
     exports app.controller;
 
     /* ================== OPENS =================== */
-//    opens app.config to spring.core, spring.beans, spring.context,ALL-UNNAMED;
 //    opens application.giaodien to javafx.graphics, javafx.fxml;
 //    opens app.controller       to javafx.fxml;
 //    opens app.model            to org.hibernate.orm.core, com.google.gson, javafx.base;
 //    opens app.service          to org.hibernate.orm.core;
-
-
 }

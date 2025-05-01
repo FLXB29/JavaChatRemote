@@ -18,3 +18,63 @@
 /* ví dụ cho nút gửi */
 #btnSend .ikonli-font-icon            { -fx-icon-color: #0078fe; }
 #btnSend:hover .ikonli-font-icon      { -fx-icon-color: #0050c8; } /* hover */
+
+.avatar-image {
+    -fx-background-radius: 50%;
+    -fx-border-radius: 50%;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.2), 3, 0, 0, 0);
+}
+
+.online-users-section {
+    -fx-background-color: #f8f9fa;
+    -fx-padding: 10px;
+    -fx-spacing: 10px;
+}
+
+.online-user-item {
+    -fx-background-color: white;
+    -fx-padding: 8px;
+    -fx-spacing: 10px;
+    -fx-background-radius: 8px;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 3, 0, 0, 0);
+}
+
+.online-user-avatar {
+    -fx-fit-width: 40px;
+    -fx-fit-height: 40px;
+    -fx-background-radius: 50%;
+    -fx-border-radius: 50%;
+}
+
+.online-status-indicator {
+    -fx-fill: #2ecc71;
+    -fx-stroke: white;
+    -fx-stroke-width: 2;
+}
+
+.group-tab {
+    -fx-background-color: white;
+    -fx-padding: 10px;
+    -fx-border-color: #e9ecef;
+    -fx-border-width: 0 0 1 0;
+}
+
+.group-item {
+    -fx-background-color: #f8f9fa;
+    -fx-padding: 12px;
+    -fx-spacing: 10px;
+    -fx-background-radius: 8px;
+    -fx-cursor: hand;
+}
+
+.group-item:hover {
+    -fx-background-color: #e9ecef;
+}
+
+.group-avatar {
+    -fx-fit-width: 50px;
+    -fx-fit-height: 50px;
+    -fx-background-radius: 50%;
+    -fx-border-radius: 50%;
+    -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 3, 0, 0, 0);
+}

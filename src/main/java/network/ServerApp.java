@@ -4,6 +4,7 @@ import app.LocalDateTimeAdapter;
 import app.dao.*;
 import app.model.*;
 import app.service.GroupMessageService;
+import app.util.Config;
 import app.util.HibernateUtil;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -45,47 +46,28 @@ public class ServerApp {
     // Mặc định ta sẽ có 1 conversation "Global Chat" để lưu tất cả MSG
     private Conversation globalConv;
 
-    private Conversation findOrCreatePrivateConversation(String userA, String userB) {
-        if (userA == null || userB == null || userA.isBlank() || userB.isBlank()) {
-            System.out.println("Lỗi: userA hoặc userB không hợp lệ (userA=" + userA + ", userB=" + userB + ")");
-            return null;
-        }
-        String nameA = (userA.compareTo(userB) < 0) ? userA : userB;
-        String nameB = (userA.compareTo(userB) < 0) ? userB : userA;
-        String convName = nameA + "|" + nameB;
-        System.out.println("Tạo convName: " + convName);
-
-        try {
-            Conversation c = conversationDAO.findByName(convName);
-            if (c == null) {
-                c = new Conversation("PRIVATE", convName);
-                conversationDAO.save(c);
-                System.out.println("Tạo conversation riêng: " + convName);
-            }
-            return c;
-        } catch (Exception e) {
-            e.printStackTrace();
-            System.out.println("Lỗi khi tìm/tạo conversation: " + convName + ", lỗi: " + e.getMessage());
-            return null;
-        }
+    public ServerApp() {
+        // Constructor mặc định
     }
 
-    public static void main(String[] args) {
-        // 1) Khởi tạo Hibernate (để DB sẵn sàng)
-        HibernateUtil.getSessionFactory();
+    public ServerApp(int port) throws IOException {
+        this.server = new ServerSocket(port);
+    }
 
-        // 2) Start server
-        new ServerApp().start(5555);
+    public void start() {
+        start(Config.getServerPort());
     }
 
     public void start(int port) {
         try {
-            // 0 ▪ Khởi Spring
+            // 0 ▪ Khởi Spring
             ctx = new AnnotationConfigApplicationContext(app.config.AppConfig.class);
             groupSvc = ctx.getBean(GroupMessageService.class);
             groupSvc.setServer(this);           // <─ truyền chính ServerApp hiện tại
 
-            server = new ServerSocket(port);
+            if (server == null) {
+                server = new ServerSocket(port);
+            }
             System.out.println("Server listening on port " + port);
 
             // Tìm hoặc tạo Global Chat
@@ -239,10 +221,11 @@ public class ServerApp {
                                             .size(400,400).outputQuality(0.8)
                                             .asBufferedImage();
 
-                                    /* chỉ lấy millis, không dính đuôi gốc */
-                                    String tn = "thumb_" + System.currentTimeMillis() + ".jpg";
-                                    Path  tp  = Path.of(dir, tn);         // uploads/2025/04/28/thumb_<ts>.jpg
-                                    ImageIO.write(th,"jpg",tp.toFile());
+                                    /* Lấy phần mở rộng từ tên file gốc */
+                                    String extension = fileName.substring(fileName.lastIndexOf("."));
+                                    String tn = "thumb_" + System.currentTimeMillis() + extension;
+                                    Path  tp  = Path.of(dir, tn);         // uploads/2025/04/28/thumb_<ts>.<extension>
+                                    ImageIO.write(th, extension.substring(1), tp.toFile());
 
                                     fa.setThumbPath(tp.toString());
                                 }
@@ -266,7 +249,7 @@ public class ServerApp {
 
                             if (conv.getMemberships().isEmpty()) {
                                 /* conversation chưa có danh sách thành viên
-                                (ví dụ “Global Chat”) → phát cho tất cả   */
+                                (ví dụ "Global Chat") → phát cho tất cả   */
                                 broadcast(metaPkt);                               // ★ thay vì loop
                             } else {
                                 /* nhóm / PM đã có memberships → chỉ gửi cho thành viên */
@@ -417,6 +400,43 @@ public class ServerApp {
                             sendPacket(new Packet(PacketType.FILE_THUMB, id, bytes));
                         }
 
+                        case AVATAR_UPLOAD -> {
+                            /* 1) xác định user gửi gói tin */
+                            String username = this.username;  // Sử dụng username từ ClientHandler
+
+                            /* 2) tạo tên file an toàn */
+                            String ext  = pkt.header().substring(pkt.header().lastIndexOf('.')); // .png…
+                            String fname= username + "_" + System.currentTimeMillis() + ext;
+                            Path  dst   = Path.of("uploads", "avatars", fname);
+                            Files.createDirectories(dst.getParent());
+                            Files.write(dst, pkt.payload());                  // lưu file
+
+                            /* 3) cập nhật DB */
+                            User u = userDAO.findByUsername(username);
+                            if (u == null) {
+                                System.out.println("Lỗi: Không tìm thấy user " + username);
+                                break;
+                            }
+                            u.setAvatarPath("uploads/avatars/" + fname);      // LƯU TƯƠNG ĐỐI
+                            u.setUseDefaultAvatar(false);
+                            userDAO.update(u);
+
+                            /* 4) phát cho tất cả client */
+                            Packet p = new Packet(PacketType.AVATAR_DATA, username, pkt.payload());
+                            broadcast(p);
+                        }
+
+                        case GET_AVATAR -> {
+                            String targetUser = pkt.header();                 // header = username
+                            User u = userDAO.findByUsername(targetUser);
+                            if(u == null || u.getAvatarPath()==null) break;
+
+                            byte[] data = Files.readAllBytes(Path.of(u.getAvatarPath()));
+                            sendPacket(new Packet(PacketType.AVATAR_DATA, targetUser, data)); // chỉ gửi requester
+                        }
+
+
+
 
 
 
@@ -510,6 +530,31 @@ public class ServerApp {
             } catch (IOException e) {
                 e.printStackTrace();
             }
+        }
+    }
+
+    private Conversation findOrCreatePrivateConversation(String userA, String userB) {
+        if (userA == null || userB == null || userA.isBlank() || userB.isBlank()) {
+            System.out.println("Lỗi: userA hoặc userB không hợp lệ (userA=" + userA + ", userB=" + userB + ")");
+            return null;
+        }
+        String nameA = (userA.compareTo(userB) < 0) ? userA : userB;
+        String nameB = (userA.compareTo(userB) < 0) ? userB : userA;
+        String convName = nameA + "|" + nameB;
+        System.out.println("Tạo convName: " + convName);
+
+        try {
+            Conversation c = conversationDAO.findByName(convName);
+            if (c == null) {
+                c = new Conversation("PRIVATE", convName);
+                conversationDAO.save(c);
+                System.out.println("Tạo conversation riêng: " + convName);
+            }
+            return c;
+        } catch (Exception e) {
+            e.printStackTrace();
+            System.out.println("Lỗi khi tìm/tạo conversation: " + convName + ", lỗi: " + e.getMessage());
+            return null;
         }
     }
 }

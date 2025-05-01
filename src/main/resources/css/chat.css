@@ -1,6 +1,30 @@
 /* ============ Layout chung ============ */
 BorderPane { -fx-background-color: linear-gradient(to bottom right,#f5f7fa 0%,#c3cfe2 100%); }
 
+/* Header với avatar và nút cài đặt */
+.chat-header {
+    -fx-padding: 10 15;
+    -fx-background-color: white;
+    -fx-background-radius: 18 18 0 0;
+    -fx-effect: dropshadow(one-pass-box, rgba(0,0,0,0.08), 8, 0, 0, 1);
+}
+
+.current-user-label {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #333333;
+}
+
+.avatar-circle {
+    -fx-fill: #e0e0e0;
+}
+
+.avatar-initial {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-text-fill: white;
+}
+
 .msg-container  { -fx-padding: 12; }
 .input-bar      { -fx-padding: 10 12; -fx-background-color: rgba(255,255,255,0.6);
     -fx-background-radius: 0 0 18 18; -fx-effect: dropshadow(one-pass-box,rgba(0,0,0,0.08),8,0,0,-1); }
@@ -21,6 +45,30 @@ BorderPane { -fx-background-color: linear-gradient(to bottom right,#f5f7fa 0%,#c
 .list-view { -fx-background-insets: 0; }
 .list-cell:selected { -fx-background-color: #eef2ff; }
 .list-cell:filled:selected:focused { -fx-background-color: #d6e0ff; }
+
+/* Tùy chỉnh hiển thị người dùng trực tuyến */
+.online-user-cell {
+    -fx-padding: 8 12;
+    -fx-spacing: 10;
+}
+
+.online-user-avatar {
+    -fx-background-radius: 15;
+    -fx-min-width: 30;
+    -fx-min-height: 30;
+    -fx-max-width: 30;
+    -fx-max-height: 30;
+}
+
+.online-user-name {
+    -fx-font-size: 14px;
+    -fx-text-fill: #333333;
+}
+
+.online-user-status {
+    -fx-font-size: 12px;
+    -fx-text-fill: #4caf50;
+}
 
 .create-btn {
     -fx-background-color:#14b8a6; -fx-text-fill:white; -fx-font-weight:600;

@@ -2,6 +2,7 @@ package app.controller;
 
 import app.LocalDateTimeAdapter;
 import app.service.ChatService;
+import app.service.UserService;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -13,6 +14,7 @@ import app.ServiceLocator;
 import app.model.Conversation;
 import app.model.Message;
 import app.model.MessageDTO;
+import app.model.User;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.geometry.Insets;
@@ -22,6 +24,7 @@ import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.image.Image;
 import javafx.scene.layout.*;
+import javafx.scene.paint.ImagePattern;
 import javafx.scene.text.TextFlow;
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
@@ -36,6 +39,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.stream.Collectors;
 import org.kordamp.ikonli.javafx.FontIcon;
 import javafx.scene.paint.Color;
@@ -45,6 +49,10 @@ import javafx.scene.image.ImageView;
 
 import javafx.scene.text.Text;
 import javafx.scene.text.TextFlow;
+import javafx.scene.shape.Circle;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
+
 public class ChatController {
 
     @FXML
@@ -57,7 +65,7 @@ public class ChatController {
     private TextField txtMessage, searchField;
 
     @FXML
-    private Button btnAttachFile, btnEmoji, btnSend;
+    private Button btnAttachFile, btnEmoji, btnSend, btnSettings, btnBack;
 
     @FXML
     private ListView<String> listOnlineUsers;
@@ -70,6 +78,18 @@ public class ChatController {
 
     @FXML
     private SplitPane rootSplit;
+    
+    @FXML
+    private Circle userAvatarCircle;
+    
+    @FXML
+    private ImageView userAvatarImage;
+    
+    @FXML
+    private Label userInitialLabel;
+    
+    @FXML
+    private Label currentUserLabel;
 
     // 1) Thuộc tính
     private String lastPmTarget;
@@ -81,6 +101,17 @@ public class ChatController {
 
     private final Map<String, Long> groupMap = new HashMap<>();
 
+    // Màu sắc cho avatar mặc định
+    private static final Color[] AVATAR_COLORS = {
+        Color.rgb(41, 128, 185),  // Xanh dương
+        Color.rgb(39, 174, 96),   // Xanh lá
+        Color.rgb(142, 68, 173),  // Tím
+        Color.rgb(230, 126, 34),  // Cam
+        Color.rgb(231, 76, 60),   // Đỏ
+        Color.rgb(52, 73, 94),    // Xám đậm
+        Color.rgb(241, 196, 15),  // Vàng
+        Color.rgb(26, 188, 156)   // Ngọc
+    };
 
     // Kết nối client (để gửi/nhận gói tin)
     private ClientConnection clientConnection;
@@ -88,30 +119,88 @@ public class ChatController {
     // add field
     private final Map<Long, Boolean> joinedConv = new HashMap<>();
     private final Map<String, VBox> fileBubbleMap = new HashMap<>();
-
-
-
-
+    private final Map<String, User> onlineUsers = new HashMap<>();
 
     @FXML
     private void initialize() {
-// Set the divider position immediately
+        // Set the divider position immediately
         rootSplit.setDividerPosition(0, 0.75);
 
-        // Lock the divider position
-        rootSplit.getDividers().get(0).positionProperty().addListener((obs, old, pos) -> {
-            if (Math.abs(pos.doubleValue() - 0.75) > 0.001) {
-                rootSplit.setDividerPosition(0, 0.75);
+        // Tùy chỉnh hiển thị người dùng trực tuyến
+        listOnlineUsers.setCellFactory(lv -> new ListCell<String>() {
+
+            /* ---------- node hiển thị ---------- */
+            private final Circle avatarCircle = new Circle(15);            // khung tròn
+            private final Label   initialLbl   = new Label();              // chữ cái đầu
+            private final StackPane avatarPane = new StackPane(avatarCircle, initialLbl);
+
+            private final Label nameLabel   = new Label();
+            private final Label statusLabel = new Label("Trực tuyến");
+            private final HBox  hbox        = new HBox(10, avatarPane, nameLabel, statusLabel);
+
+            {
+                /* ---------- CSS / layout ---------- */
+                hbox.setAlignment(Pos.CENTER_LEFT);
+                hbox.setPadding(new Insets(5, 10, 5, 10));
+                hbox.getStyleClass().add("online-user-cell");
+
+                avatarCircle.getStyleClass().add("online-user-avatar");
+                initialLbl.setStyle("-fx-text-fill: white; -fx-font-weight: bold;");
+
+                nameLabel.getStyleClass().add("online-user-name");
+                statusLabel.getStyleClass().add("online-user-status");
+            }
+
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+
+                if (empty || item == null) {
+                    setGraphic(null);
+                    return;
+                }
+
+                nameLabel.setText(item);
+                User user = onlineUsers.get(item);
+
+                /* ---------- 1) Xử lý avatar ---------- */
+                if (user != null && !user.isUseDefaultAvatar() && user.getAvatarPath() != null) {
+                    // Có avatar tùy chỉnh
+                    File avatarFile = new File(user.getAvatarPath());
+                    if (avatarFile.exists()) {
+                        avatarCircle.setFill(new ImagePattern(
+                                new Image(avatarFile.toURI().toString(), false)));
+                    } else {
+                        // File mất → fallback mặc định
+                        setDefaultAvatar(item);
+                    }
+                    initialLbl.setVisible(false);            // ẩn chữ cái đầu
+                } else {
+                    // Avatar mặc định
+                    setDefaultAvatar(item);
+                }
+
+                /* ---------- 2) Tô viền khi được chọn ---------- */
+                if (isSelected()) {
+                    avatarCircle.setStroke(Color.web("#4361ee"));
+                } else {
+                    avatarCircle.setStroke(Color.WHITE);
+                }
+                avatarCircle.setStrokeWidth(2);
+
+                setGraphic(hbox);                           // hiển thị cell
+            }
+
+            /* ======== hàm tiện ích ======== */
+            private void setDefaultAvatar(String username) {
+                int colorIndex = Math.abs(username.hashCode() % AVATAR_COLORS.length);
+                avatarCircle.setFill(AVATAR_COLORS[colorIndex]);
+
+                initialLbl.setText(username.substring(0, 1).toUpperCase());
+                initialLbl.setVisible(true);
             }
         });
 
-        // Prevent user from moving the divider
-        rootSplit.getDividers().get(0).setPosition(0.75);
-
-        // Add CSS style to prevent visual glitches
-        rootSplit.setStyle("-fx-background-color: transparent; -fx-box-border: transparent;");
-        System.out.println("ScrollPane height: " + scrollPane.getHeight());
-        System.out.println("VBox height: " + messagesContainer.getHeight());
         // 1) Gọi service bind UI (nếu bạn cần)
         ServiceLocator.chat().bindUI(this);
         Platform.runLater(() -> {
@@ -137,21 +226,29 @@ public class ChatController {
         // 4) Thiết lập callback user list
         clientConnection.setOnUserListReceived(users -> {
             Platform.runLater(() -> {
-                // Giữ đúng 1 mục cố định
-                listOnlineUsers.getItems().setAll("Global");
+                // Xóa danh sách cũ
+                onlineUsers.clear();
+                listOnlineUsers.getItems().clear();
 
-                // Thêm các user online
-                for (String u : users) {
-                    if (!u.equals(getCurrentUser())) {
-                        listOnlineUsers.getItems().add(u);
+                // Thêm Global vào đầu danh sách
+                listOnlineUsers.getItems().add("Global");
+                
+                // Thêm các user online và cập nhật thông tin
+                for (String username : users) {
+                    if (!username.equals(getCurrentUser())) {
+                        listOnlineUsers.getItems().add(username);
+                        // Lấy thông tin user từ UserService
+                        User user = ServiceLocator.userService().getUser(username);
+                        if (user != null) {
+                            onlineUsers.put(username, user);
+                        }
                     }
                 }
+                
+                // Cập nhật hiển thị
+                listOnlineUsers.refresh();
             });
         });
-
-
-
-
 
         clientConnection.setOnTextReceived((from, content) -> {
             if (!"Global".equals(currentTarget)) return;          // ② LỌC
@@ -163,28 +260,6 @@ public class ChatController {
 
         // callback khi server xác nhận Join
         clientConnection.setOnConvJoined(cid -> joinedConv.put(cid, true));
-
-        listOnlineUsers.setCellFactory(listView -> new ListCell<String>() {
-            @Override
-            protected void updateItem(String item, boolean empty) {
-                super.updateItem(item, empty);
-
-                if (empty || item == null) {
-                    setText(null);
-                    setStyle("");
-                } else {
-                    setText(item);
-
-                    // Nếu item == currentTarget => bôi đậm
-                    if (item.equals(currentTarget)) {
-                        setStyle("-fx-font-weight: bold;");
-                    } else {
-                        setStyle("");
-                    }
-                }
-            }
-        });
-
 
         listOnlineUsers.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
             if (newVal != null) {
@@ -206,39 +281,6 @@ public class ChatController {
             }
         });
 
-
-//        clientConnection.setOnHistoryReceived(json -> {
-//            System.out.println("Nhận HISTORY JSON: " + json); // Xem JSON có đúng không
-//            try {
-//                // 1) Thử parse JSON -> list of messages
-//                List<MessageDTO> msgList = parseJsonToMessageDTO(json);
-//                System.out.println("Parse thành công, số tin nhắn: " + msgList.size());
-//                // 2) Nếu parse OK => cập nhật UI
-//                Platform.runLater(() -> {
-//                    messagesContainer.getChildren().clear();
-//                    for (MessageDTO m : msgList) {
-//                        System.out.println("Hiển thị tin từ: " + m.getUser() + ", currentUser: " + getCurrentUser());
-//                        boolean isOutgoing = m.getUser().equals(getCurrentUser());
-//                        displayMessage(m.getUser(), m.getContent(), isOutgoing, m.getTime());
-//                    }
-//                });
-//            } catch (Exception ex) {
-//                // 3) In ra stacktrace để biết lỗi
-//                ex.printStackTrace();
-//
-//                // Tuỳ ý: Hiển thị alert thông báo lỗi
-//                Platform.runLater(() -> {
-//                    Alert alert = new Alert(Alert.AlertType.ERROR);
-//                    alert.setHeaderText("Lỗi parse JSON HISTORY");
-//                    alert.setContentText("JSON nhận được:\n" + json
-//                            + "\n\nChi tiết: " + ex.getMessage());
-//                    alert.showAndWait();
-//                });
-//            }
-//        });
-
-        // Khi server xác nhận tạo nhóm
-
         clientConnection.setOnHistory((convId, json) -> {
             var msgList = parseJsonToMessageDTO(json);
             Platform.runLater(() -> {
@@ -251,15 +293,9 @@ public class ChatController {
             });
         });
 
-
-
-
-
-        /* ① đợi đến khi Node đã có Scene & Stage */
         rootSplit.sceneProperty().addListener((obs, oldScene, newScene) -> {
             if (newScene == null) return;
 
-            /* đợi Window non-null */
             newScene.windowProperty().addListener((o, oldWin, newWin) -> {
                 if (newWin != null) {                      // Stage đã có
                     ((Stage) newWin).setOnCloseRequest(ev ->
@@ -268,10 +304,6 @@ public class ChatController {
             });
         });
 
-
-
-
-        // ngay sau khi đã đặt các callback khác
         clientConnection.setOnConvList(json -> {
             // 1) parse JSON nhận từ server
             List<Map<String,Object>> list = new Gson().fromJson(
@@ -295,10 +327,6 @@ public class ChatController {
                     listGroups.getItems().add(name);
                     // 3b. lưu vào groupMap cho send/receive
                     groupMap.put(name, id);
-
-//                    // 3c. đưa tên nhóm vào listOnlineUsers (để chọn chat)
-//                    if (!listOnlineUsers.getItems().contains(name))
-//                        listOnlineUsers.getItems().add(name);
                 }
                 listGroups.refresh();
                 listOnlineUsers.refresh();
@@ -317,8 +345,6 @@ public class ChatController {
                     listGroups.refresh();
                 });
 
-
-// Khi nhận tin nhắn group
         clientConnection.setOnGroupMsg((convId, from, content) -> {
             // chỉ hiện nếu màn hình đang mở đúng group
             if(!groupMap.containsKey(currentTarget)
@@ -328,9 +354,6 @@ public class ChatController {
             Platform.runLater(() ->
                     displayMessage(from, content, isOutgoing, LocalDateTime.now()));
         });
-
-
-
 
         clientConnection.setOnPrivateMsgReceived((from, content) -> {
             boolean out = from.equals(getCurrentUser());
@@ -346,30 +369,51 @@ public class ChatController {
                     displayMessage(from, content, out, LocalDateTime.now()));
         });
 
-
-
-        // Khi ấn Enter trong txtMessage => gửi tin
         txtMessage.setOnKeyPressed(event -> {
             if (event.getCode().toString().equals("ENTER")) {
                 onSend();
             }
         });
 
-        // Tùy chỉnh ScrollPane & messagesContainer
         messagesContainer.setFillWidth(true);
         scrollPane.setFitToWidth(true);
         scrollPane.vvalueProperty().bind(messagesContainer.heightProperty());
 
-        //chinh cho scrollpane co thể cuộn
         scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.ALWAYS);
         scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         scrollPane.setStyle("-fx-background-color: #2b2b2b; -fx-border-color: #3a3a3a;");
 
+        // Thiết lập callback cho sự kiện avatar được cập nhật
+        clientConnection.setOnAvatarUpdated((username, avatarData) -> {
+            Platform.runLater(() -> {
+                try {
+                    // Cập nhật thông tin user trong onlineUsers map
+                    User user = ServiceLocator.userService().getUser(username);
+                    if (user != null) {
+                        onlineUsers.put(username, user);
+                    }
 
+                    // Nếu là current user, cập nhật avatar trong header
+                    if (username.equals(currentUser)) {
+                        updateUserAvatar();
+                    }
+
+                    // Refresh danh sách để cập nhật avatar trong list online users
+                    listOnlineUsers.refresh();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    showError("Không thể cập nhật avatar", e);
+                }
+            });
+        });
     }
 
     public void setCurrentUser(String username) {
         this.currentUser = username;
+        currentUserLabel.setText(username);
+        
+        // Hiển thị avatar người dùng
+        updateUserAvatar();
 
         // Nếu có conversation cứng, lấy tin nhắn cũ
         Conversation conv = ServiceLocator.chat().getConversation();
@@ -387,8 +431,6 @@ public class ChatController {
             }
         }
     }
-
-
 
     public String getCurrentUser() {
         return currentUser;
@@ -428,7 +470,6 @@ public class ChatController {
         clientConnection.createGroup(gName, members);
     }
 
-
     @FXML
     private void onSend() {
         String content = txtMessage.getText().trim();
@@ -449,91 +490,14 @@ public class ChatController {
                 }).start();
                 lastPmTarget = currentTarget;                    // vẫn ghi nhớ
             }
-
             else {
                 // Gửi tin PM
                 clientConnection.sendPrivate(currentTarget, content);
                 lastPmTarget = currentTarget;            // ① GHI NHỚ
-
             }
             txtMessage.clear();
         }
     }
-//    public void displayFileMessage(String from, String fileId, boolean isOutgoing, LocalDateTime sentTime, String fileName, long fileSize) {
-//        // Tạo UI cho tin nhắn chứa file
-//        HBox bubbleBox = new HBox(5);
-//        bubbleBox.setPrefWidth(Double.MAX_VALUE);
-//        bubbleBox.setAlignment(isOutgoing ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
-//
-//        VBox messageVBox = new VBox(2);
-//
-//        if (!isOutgoing) {
-//            Label fromLabel = new Label(from);
-//            fromLabel.setStyle("-fx-text-fill:#b0b0b0; -fx-font-size:10;");
-//            messageVBox.getChildren().add(fromLabel);
-//        }
-//
-//        Label name = new Label(fileName);
-//        Label sz = new Label(formatFileSize(fileSize));
-//
-//        Button btn = new Button(isOutgoing ? "Lưu về..." : "Tải xuống");
-//
-//        // Button action để tải file nếu người dùng muốn
-//        btn.setOnAction(e -> {
-//            if (!ServiceLocator.chat().hasFile(fileId)) {
-//                btn.setText("Đang tải…");
-//                btn.setDisable(true);
-//                ServiceLocator.chat().download(fileId);
-//
-//                // Kiểm tra nếu file đã tải xong
-//                new Thread(() -> {
-//                    while (!ServiceLocator.chat().hasFile(fileId)) {
-//                        try { Thread.sleep(200); } catch (Exception ex) {}
-//                    }
-//                    Platform.runLater(() -> {
-//                        btn.setText("Lưu về…");
-//                        btn.setDisable(false);
-//                    });
-//                }).start();
-//                return;
-//            }
-//
-//            FileChooser fc = new FileChooser();
-//            fc.setInitialFileName(fileName);
-//            File dest = fc.showSaveDialog(btn.getScene().getWindow());
-//            if (dest != null) {
-//                try {
-//                    byte[] data = ServiceLocator.chat().getFileData(fileId);
-//                    Files.write(dest.toPath(), data);
-//                } catch (IOException ex) {
-//                    showError("Lỗi lưu file", ex);
-//                }
-//            }
-//        });
-//
-//        messageVBox.getChildren().addAll(name, sz, btn);
-//
-//        // Kiểm tra nếu file là ảnh và nhỏ hơn 2MB để hiển thị thumbnail
-//        boolean isImage = fileName.matches("(?i).+\\.(png|jpe?g|gif)");
-//        if (isImage && fileSize < 2 * 1024 * 1024) {  // Nếu là ảnh nhỏ hơn 2MB
-//            byte[] data = ServiceLocator.chat().getFileData(fileId);  // lấy từ cache
-//            if (data != null) {
-//                ImageView iv = new ImageView(new Image(new ByteArrayInputStream(data)));
-//                iv.setFitWidth(260); iv.setPreserveRatio(true);
-//                messageVBox.getChildren().add(iv);  // Thêm thumbnail vào UI
-//            }
-//        }
-//
-//        bubbleBox.getChildren().add(messageVBox);
-//
-//        // Thêm vào container tin nhắn
-//        messagesContainer.getChildren().add(bubbleBox);
-//    }
-
-
-
-
-
 
     @FXML
     private void onAttachFile() {
@@ -595,7 +559,7 @@ public class ChatController {
         String[] emojis = { "😊", "😂",  "👍", "🎉", "😎", "😭", "😡",
                 "🍀", "🔥", "🤔", "😴" };
 
-// 2) Mảng iconLiteral để hiển thị nút
+        // 2) Mảng iconLiteral để hiển thị nút
         String[] iconLiterals = {
                 "far-smile",        // 😊
                 "far-laugh-beam",   // 😂
@@ -609,7 +573,6 @@ public class ChatController {
                 "far-meh",          // 🤔
                 "fas-bed"           // 😴
         };
-
 
         int cols = 4;
         for (int i = 0; i < iconLiterals.length; i++) {
@@ -635,7 +598,6 @@ public class ChatController {
         emojiStage.show();
     }
 
-
     private Node buildMsgNode(String content, boolean isOutgoing) {
         TextFlow flow = buildEmojiTextFlow(content);
         flow.setMaxWidth(600);
@@ -654,7 +616,6 @@ public class ChatController {
         return bubble;
     }
 
-
     private List<MessageDTO> parseJsonToMessageDTO(String json) {
         Gson gson = new GsonBuilder()
                 .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
@@ -663,7 +624,6 @@ public class ChatController {
         Type listType = new TypeToken<List<MessageDTO>>(){}.getType();
         return gson.fromJson(json, listType);
     }
-
 
     public void displayIncomingMessage(String from, String content) {
         HBox bubbleBox = new HBox(5);
@@ -732,9 +692,6 @@ public class ChatController {
         }
         return flow;
     }
-
-
-
 
     // hiển thị Alert lỗi
     private void showError(String msg, Throwable ex) {
@@ -808,8 +765,6 @@ public class ChatController {
 
         return row;
     }
-
-
 
     private String getFileIconPath(String fileName) {
         String ext = fileName.substring(fileName.lastIndexOf(".") + 1).toLowerCase();
@@ -979,7 +934,90 @@ public class ChatController {
         }
     }
 
+    /**
+     * Cập nhật hiển thị avatar người dùng
+     */
+    private void updateUserAvatar() {
+        if (currentUser == null) return;
 
+        UserService userService = ServiceLocator.userService();
+        User user = userService.getUser(currentUser);
 
+        /* --- MẶC ĐỊNH ẩn ImageView, chỉ dùng Circle --- */
+        userAvatarImage.setVisible(false);
+        userAvatarCircle.setStroke(Color.WHITE);
+        userAvatarCircle.setStrokeWidth(2);
+        userAvatarCircle.setRadius(20); // Đặt kích thước cố định cho avatar
 
+        if (user != null && !user.isUseDefaultAvatar() && user.getAvatarPath() != null) {
+            /* === Avatar tuỳ chỉnh === */
+            File avatarFile = new File(user.getAvatarPath());
+            if (avatarFile.exists()) {
+                try {
+                    Image img = new Image(avatarFile.toURI().toString(), 
+                                       40, 40, true, true); // Đặt kích thước và cho phép smooth scaling
+                    ImagePattern pattern = new ImagePattern(img);
+                    userAvatarCircle.setFill(pattern);
+                    userInitialLabel.setVisible(false);
+                    userAvatarCircle.setVisible(true);
+                    return;
+                } catch (Exception e) {
+                    System.out.println("Lỗi khi tải avatar: " + e.getMessage());
+                }
+            }
+        }
+
+        /* === Avatar mặc định (chữ cái đầu) === */
+        int colorIndex = Math.abs(currentUser.hashCode() % AVATAR_COLORS.length);
+        userAvatarCircle.setFill(AVATAR_COLORS[colorIndex]);
+        userInitialLabel.setText(currentUser.substring(0, 1).toUpperCase());
+        userInitialLabel.setVisible(true);
+        userAvatarCircle.setVisible(true);
+    }
+
+    /**
+     * Mở trang cài đặt người dùng
+     */
+    @FXML
+    private void onOpenSettings() {
+        try {
+            // Nạp profile.fxml
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/profile.fxml"));
+            Parent root = loader.load();
+
+            // Lấy Scene hiện tại
+            Scene scene = btnSettings.getScene();
+            scene.setRoot(root);
+
+            // Lấy controller của profile.fxml, gán username
+            ProfileController profileCtrl = loader.getController();
+            profileCtrl.setCurrentUser(currentUser);
+        } catch (IOException e) {
+            e.printStackTrace();
+            showError("Không thể mở trang cài đặt", e);
+        }
+    }
+
+    @FXML
+    private void onBack() {
+        try {
+            // Quay lại trang chat
+            FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/chat.fxml"));
+            Parent root = loader.load();
+            
+            // Lấy Scene hiện tại
+            Scene scene = btnBack.getScene();
+            scene.setRoot(root);
+            
+            // Lấy controller của chat.fxml, gán username và yêu cầu cập nhật
+            ChatController chatCtrl = loader.getController();
+            chatCtrl.setCurrentUser(currentUser); // Sử dụng currentUser thay vì currentUsername
+            
+            // Yêu cầu danh sách user online mới từ server
+            ServiceLocator.chat().getClient().requestUserList();
+        } catch (IOException e) {
+            e.printStackTrace();
+            showError("Không thể quay lại trang chat", e);
+        }
+    }
 }

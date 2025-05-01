@@ -44,7 +44,7 @@
 
 
     <dependencies>
-        <!-- JavaFX -->
+
         <dependency>
             <groupId>org.openjfx</groupId>
             <artifactId>javafx-controls</artifactId>
@@ -55,121 +55,112 @@
             <artifactId>javafx-fxml</artifactId>
             <version>${javafx.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.openjfx</groupId>
+            <artifactId>javafx-swing</artifactId>
+            <version>${javafx.version}</version>
+        </dependency>
 
-        <!-- Gson -->
+        <!-- JPA -->
+        <dependency>
+            <groupId>jakarta.persistence</groupId>
+            <artifactId>jakarta.persistence-api</artifactId>
+            <version>3.1.0</version>
+        </dependency>
+        <!-- Transaction -->
+        <dependency>
+            <groupId>jakarta.transaction</groupId>
+            <artifactId>jakarta.transaction-api</artifactId>
+            <version>2.0.1</version>
+        </dependency>
+        <!-- Annotation chung -->
+        <dependency>
+            <groupId>jakarta.annotation</groupId>
+            <artifactId>jakarta.annotation-api</artifactId>
+            <version>2.1.1</version>
+        </dependency>
+        <!-- DI – Spring 6 bắt buộc -->
+        <dependency>
+            <groupId>jakarta.inject</groupId>
+            <artifactId>jakarta.inject-api</artifactId>
+            <version>2.0.1</version>
+        </dependency>
+        <!-- (Tuỳ chọn) CDI – chỉ cần nếu giữ requires jakarta.cdi -->
+        <!--
+        <dependency>
+            <groupId>jakarta.enterprise</groupId>
+            <artifactId>jakarta.enterprise.cdi-api</artifactId>
+            <version>4.0.1</version>
+        </dependency>
+        -->
+
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
             <version>2.10.1</version>
         </dependency>
 
-        <!-- 1) Phần lõi -->
+        <!-- Ikonli (lấy version từ BOM) -->
         <dependency>
             <groupId>org.kordamp.ikonli</groupId>
             <artifactId>ikonli-core</artifactId>
-            <version>12.4.0</version>
         </dependency>
-
-        <!-- 2) Lớp FontIcon cho JavaFX -->
         <dependency>
             <groupId>org.kordamp.ikonli</groupId>
             <artifactId>ikonli-javafx</artifactId>
-            <version>12.4.0</version>
         </dependency>
-
-        <!-- 3) Gói icon/emoji bạn muốn dùng -->
         <dependency>
             <groupId>org.kordamp.ikonli</groupId>
             <artifactId>ikonli-fontawesome6-pack</artifactId>
-            <version>12.4.0</version>
         </dependency>
         <dependency>
             <groupId>org.kordamp.ikonli</groupId>
             <artifactId>ikonli-bootstrapicons-pack</artifactId>
-            <version>12.4.0</version>
         </dependency>
 
-
+        <!-- Emoji -->
         <dependency>
             <groupId>com.gluonhq.emoji</groupId>
             <artifactId>emoji</artifactId>
-            <version>1.1.0</version>   <!-- bản mới nhất trên Maven Central -->
+            <version>1.1.0</version>
         </dependency>
-
-        <!-- Emoji sprites offline (không cần mạng) -->
         <dependency>
             <groupId>com.gluonhq.emoji</groupId>
             <artifactId>offline</artifactId>
             <version>1.1.0</version>
         </dependency>
 
-        <!-- Thêm vào dependencies, KHÔNG cần <repositories> jitpack -->
-<!--        <dependency>-->
-<!--            <groupId>org.webjars.npm</groupId>-->
-<!--            <artifactId>twemoji</artifactId>-->
-<!--            <version>14.0.2</version>-->
-<!--        </dependency>-->
-
-        <!-- spring core -->
+        <!-- Spring Framework & Data -->
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-context</artifactId>
             <version>6.1.6</version>
         </dependency>
 
-        <!-- Maven -->
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-simple</artifactId>
-            <version>2.0.12</version>
-        </dependency>
-
-
-        <!-- spring data jpa -->
         <dependency>
             <groupId>org.springframework.data</groupId>
             <artifactId>spring-data-jpa</artifactId>
             <version>3.2.6</version>
+            <!-- Ngăn JPA API cũ trùng lặp -->
+            <exclusions>
+                <exclusion>
+                    <groupId>jakarta.persistence</groupId>
+                    <artifactId>jakarta.persistence-api</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
-
-
-
-
-
-        <!-- Jackson annotation API (~85 KB) -->
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-annotations</artifactId>
-            <version>2.17.1</version> <!-- bản mới nhất 04-2025 -->
-        </dependency>
-
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-            <version>2.17.1</version>
-        </dependency>
-
-        <!-- pom.xml -->
-        <dependency>
-            <groupId>net.coobird</groupId>
-            <artifactId>thumbnailator</artifactId>
-            <version>0.4.20</version>
-        </dependency>
-
-
-        <!-- BCrypt -->
-        <dependency>
-            <groupId>org.mindrot</groupId>
-            <artifactId>jbcrypt</artifactId>
-            <version>0.4</version>
-        </dependency>
-
-        <!-- Hibernate 6 -->
+        <!-- Hibernate (loại trùng JPA) -->
         <dependency>
             <groupId>org.hibernate.orm</groupId>
             <artifactId>hibernate-core</artifactId>
             <version>6.4.4.Final</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>jakarta.persistence</groupId>
+                    <artifactId>jakarta.persistence-api</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
 
         <!-- MySQL driver -->
@@ -179,32 +170,65 @@
             <version>8.0.33</version>
         </dependency>
 
-        <!-- Jakarta EE APIs (JPA / TX / Annotation …) -->
+        <!-- Jackson -->
         <dependency>
-            <groupId>jakarta.persistence</groupId>
-            <artifactId>jakarta.persistence-api</artifactId>
-            <version>3.1.0</version>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+            <version>2.17.1</version>
         </dependency>
         <dependency>
-            <groupId>jakarta.transaction</groupId>
-            <artifactId>jakarta.transaction-api</artifactId>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <version>2.17.1</version>
+        </dependency>
+
+        <!-- Tiện ích khác -->
+        <dependency>
+            <groupId>net.coobird</groupId>
+            <artifactId>thumbnailator</artifactId>
+            <version>0.4.20</version>
+        </dependency>
+        <dependency>
+            <groupId>org.mindrot</groupId>
+            <artifactId>jbcrypt</artifactId>
+            <version>0.4</version>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+            <version>2.0.12</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.ulisesbocchio</groupId>
+            <artifactId>jasypt-spring-boot-starter</artifactId>
+            <version>3.0.5</version>
+        </dependency>
+
+        <!-- Mail (implementation + API) -->
+
+        <dependency>
+            <groupId>com.sun.mail</groupId>
+            <artifactId>jakarta.mail</artifactId>
             <version>2.0.1</version>
         </dependency>
-        <dependency>
-            <groupId>jakarta.annotation</groupId>
-            <artifactId>jakarta.annotation-api</artifactId>
-            <version>2.1.1</version>
-        </dependency>
-        <dependency>
-            <groupId>jakarta.jws</groupId>
-            <artifactId>jakarta.jws-api</artifactId>
-            <version>3.0.0</version>
-        </dependency>
+
+        <!-- Activation: dùng bản đầy đủ đi kèm Sun Mail -->
+
+
+        <!-- Implementation (runtime) – dùng Angus Mail  -->
+        <!-- Jakarta Mail  (API + implementation + JPMS module-name = "jakarta.mail") -->
+
+
+        <!-- Chỉ API CDI, đủ cho biên dịch; runtime không cần -->
         <dependency>
             <groupId>jakarta.enterprise</groupId>
             <artifactId>jakarta.enterprise.cdi-api</artifactId>
             <version>4.0.1</version>
         </dependency>
+
+
+        <!-- Jakarta Activation 2.x (bắt buộc) -->
+
 
         <!-- JUnit 5 -->
         <dependency>
@@ -219,21 +243,33 @@
             <version>${junit.version}</version>
             <scope>test</scope>
         </dependency>
+
     </dependencies>
 
     <build>
         <plugins>
+            <!-- Biên dịch JPMS -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>3.13.0</version>
                 <configuration>
-                    <release>${java.version}</release>        <!-- gọn gàng -->
+                    <release>${java.version}</release>
+                    <!-- Giữ module-path = true (mặc định) -->
                 </configuration>
             </plugin>
 
+            <!-- Surefire (nếu chạy unit-test) -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.2.5</version>
+                <configuration>
+                    <useModulePath>true</useModulePath>
+                </configuration>
+            </plugin>
 
-            <!-- chạy JavaFX app -->
+            <!-- JavaFX run -->
             <plugin>
                 <groupId>org.openjfx</groupId>
                 <artifactId>javafx-maven-plugin</artifactId>
@@ -242,7 +278,6 @@
                     <mainClass>application.giaodien.HelloApplication</mainClass>
                 </configuration>
             </plugin>
-
         </plugins>
     </build>
 </project>

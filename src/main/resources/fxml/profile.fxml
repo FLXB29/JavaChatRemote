@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.scene.image.ImageView?>
+<?import javafx.scene.image.Image?>
+<?import javafx.geometry.Insets?>
+
+<?import javafx.scene.shape.Circle?>
+<VBox spacing="20" stylesheets="@/css/profile.css" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="app.controller.ProfileController">
+    <padding>
+        <Insets top="20" right="20" bottom="20" left="20"/>
+    </padding>
+    
+    <!-- Header với nút quay lại -->
+    <HBox alignment="CENTER_LEFT" spacing="10">
+        <Button fx:id="btnBack" onAction="#onBack" styleClass="icon-btn">
+            <graphic>
+                <ImageView fitWidth="20" preserveRatio="true">
+                    <image>
+                        <Image url="@/icons/back.png" />
+                    </image>
+                </ImageView>
+            </graphic>
+        </Button>
+        <Label text="Cài đặt tài khoản" styleClass="header-label"/>
+    </HBox>
+    
+    <!-- Avatar và thông tin cơ bản -->
+    <VBox spacing="15" styleClass="profile-section">
+        <Label text="Thông tin cá nhân" styleClass="section-label"/>
+        
+        <!-- Avatar -->
+        <HBox alignment="CENTER" spacing="10">
+            <StackPane>
+                <Circle fx:id="avatarCircle" radius="50" styleClass="avatar-circle"/>
+                <ImageView fx:id="imgAvatar" fitWidth="100" fitHeight="100" preserveRatio="true"/>
+                <Label fx:id="lblInitial" styleClass="avatar-initial"/>
+            </StackPane>
+            
+            <VBox spacing="5">
+                <Button fx:id="btnChangeAvatar" text="Thay đổi ảnh đại diện" onAction="#onChangeAvatar"/>
+                <Button fx:id="btnUseDefaultAvatar" text="Sử dụng avatar mặc định" onAction="#onUseDefaultAvatar"/>
+            </VBox>
+        </HBox>
+        
+        <!-- Thông tin cá nhân -->
+        <GridPane hgap="10" vgap="10">
+            <Label text="Tên đăng nhập:" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
+            <Label fx:id="lblUsername" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+            
+            <Label text="Họ và tên:" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
+            <TextField fx:id="txtFullName" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+            
+            <Label text="Email:" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
+            <TextField fx:id="txtEmail" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+        </GridPane>
+        
+        <Button fx:id="btnSaveProfile" text="Lưu thông tin" onAction="#onSaveProfile" styleClass="primary-btn"/>
+    </VBox>
+    
+    <!-- Đổi mật khẩu -->
+    <VBox spacing="15" styleClass="profile-section">
+        <Label text="Đổi mật khẩu" styleClass="section-label"/>
+        
+        <GridPane hgap="10" vgap="10">
+            <Label text="Mật khẩu hiện tại:" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
+            <PasswordField fx:id="txtCurrentPassword" GridPane.columnIndex="1" GridPane.rowIndex="0"/>
+            
+            <Label text="Mật khẩu mới:" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
+            <PasswordField fx:id="txtNewPassword" GridPane.columnIndex="1" GridPane.rowIndex="1"/>
+            
+            <Label text="Xác nhận mật khẩu:" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
+            <PasswordField fx:id="txtConfirmPassword" GridPane.columnIndex="1" GridPane.rowIndex="2"/>
+        </GridPane>
+        
+        <HBox spacing="10">
+            <Button fx:id="btnChangePassword" text="Đổi mật khẩu" onAction="#changePassword" styleClass="primary-btn"/>
+            <Button fx:id="btnRequestOTP" text="Gửi mã OTP" onAction="#requestOtp" styleClass="secondary-btn"/>
+        </HBox>
+        
+        <!-- Phần nhập mã OTP (ẩn mặc định) -->
+        <VBox fx:id="otpContainer"
+              spacing="10"
+              visible="false" managed="false">
+            <Label text="Vui lòng nhập mã OTP đã gửi tới email:"/>
+            <TextField fx:id="txtOTP" promptText="Nhập mã OTP (6 số)"/>
+        </VBox>
+    </VBox>
+    
+    <!-- Thông báo -->
+    <Label fx:id="lblStatus" styleClass="status-label"/>
+</VBox> 

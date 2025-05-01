@@ -11,18 +11,24 @@ import javafx.scene.control.*;
 import javafx.stage.Stage;
 
 import java.io.IOException;
+import java.util.regex.Pattern;
 
 public class RegisterController {
 
     @FXML private TextField txtUsername;
+    @FXML private TextField txtEmail;
     @FXML private PasswordField txtPassword, txtConfirm;
     @FXML private Button btnRegister;
     @FXML private Hyperlink btnGoLogin;   // đổi Button ➜ Hyperlink
     @FXML private Label lblStatus;
-    @FXML private TextField     txtPasswordPlain;
+    @FXML private TextField txtPasswordPlain;
+    @FXML private Button btnShowPass;
 
     private boolean showing = false;
 
+    // Mẫu regex để kiểm tra email
+    private static final Pattern EMAIL_PATTERN = 
+        Pattern.compile("^[A-Za-z0-9+_.-]+@(.+)$");
 
     /* hiển/ẩn mật khẩu */
     @FXML
@@ -44,6 +50,7 @@ public class RegisterController {
             txtPasswordPlain.setManaged(false);
         }
     }
+    
     @FXML
     public void initialize() {
         lblStatus.setText("");
@@ -53,6 +60,8 @@ public class RegisterController {
     @FXML
     private void onRegister() {
         boolean ok = validate(txtUsername)
+                & validate(txtEmail)
+                & validateEmail(txtEmail)
                 & validate(txtPassword)
                 & validate(txtConfirm)
                 & matchPassword();
@@ -64,10 +73,17 @@ public class RegisterController {
 
         boolean created = ServiceLocator.userService()
                 .register(txtUsername.getText().trim(),
-                        pwd);
-        lblStatus.setText(created ?
-                "Đăng ký thành công! Vui lòng đăng nhập."
-                : "Tên người dùng đã tồn tại!");
+                        pwd,
+                        txtEmail.getText().trim(),
+                        ""); // Tên đầy đủ để trống, có thể cập nhật sau
+        
+        if (created) {
+            lblStatus.setText("Đăng ký thành công! Vui lòng đăng nhập.");
+            lblStatus.setStyle("-fx-text-fill: #4caf50;"); // Màu xanh lá
+        } else {
+            lblStatus.setText("Tên người dùng hoặc email đã tồn tại!");
+            lblStatus.setStyle("-fx-text-fill: #ef476f;"); // Màu đỏ
+        }
     }
 
     @FXML
@@ -83,11 +99,25 @@ public class RegisterController {
             e.printStackTrace();
         }
     }
+    
     /* --- validate giống Login --- */
     private boolean validate(TextField tf) {
         if (tf.getText().isBlank()) {
             if (!tf.getStyleClass().contains("invalid"))
                 tf.getStyleClass().add("invalid");
+            return false;
+        }
+        tf.getStyleClass().remove("invalid");
+        return true;
+    }
+    
+    /* Kiểm tra email hợp lệ */
+    private boolean validateEmail(TextField tf) {
+        String email = tf.getText().trim();
+        if (!EMAIL_PATTERN.matcher(email).matches()) {
+            if (!tf.getStyleClass().contains("invalid"))
+                tf.getStyleClass().add("invalid");
+            lblStatus.setText("Email không hợp lệ! Vui lòng nhập đúng định dạng.");
             return false;
         }
         tf.getStyleClass().remove("invalid");

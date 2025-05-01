@@ -12,14 +12,18 @@ public class UserDAO {
     }
 
     public void save(User user) {
-        Transaction tx = null;
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            tx = session.beginTransaction();
+            Transaction tx = session.beginTransaction();
             session.persist(user);
             tx.commit();
-        } catch (Exception e) {
-            if (tx != null) tx.rollback();
-            e.printStackTrace();
+        }
+    }
+
+    public void update(User user) {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            Transaction tx = session.beginTransaction();
+            session.merge(user);
+            tx.commit();
         }
     }
 
