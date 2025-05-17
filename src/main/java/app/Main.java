@@ -11,7 +11,7 @@ public class Main extends Application {
 
     @Override
     public void start(Stage stage) throws Exception {
-        ServiceLocator.init();           // khởi tạo Service
+        ServiceLocator.init(false);      // khởi tạo Service cho client
 
         FXMLLoader fxml = new FXMLLoader(getClass().getResource("/fxml/login.fxml"));
         Scene scene = new Scene(fxml.load());

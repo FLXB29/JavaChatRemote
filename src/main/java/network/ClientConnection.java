@@ -28,7 +28,7 @@ public class ClientConnection {
     private Socket socket;
     private ObjectOutputStream out;
     private ObjectInputStream in;
-    private static final int SOCKET_TIMEOUT = 30000; // 30 seconds
+    private static final int SOCKET_TIMEOUT = 300000; // 5 phút
     private static final int MAX_RECONNECT_ATTEMPTS = 3;
     private int reconnectAttempts = 0;
 
@@ -63,6 +63,14 @@ public class ClientConnection {
     private String currentUser;
     private ListView<User> listOnlineUsers;
 
+    private Runnable onLoginSuccess;             // đặt cạnh các callback khác
+    public  void setOnLoginSuccess(Runnable r){ this.onLoginSuccess = r; }
+
+
+    /* Callback khi nhận danh sách lời mời (JSON hoặc List<Friendship>) */
+    private Consumer<String> onPendingListReceived;   // đơn giản: nhận JSON
+
+
     // Thêm callback cho sự kiện nhận avatar mới
     private BiConsumer<String, byte[]> onAvatarUpdated;
 
@@ -84,6 +92,10 @@ public class ClientConnection {
     public void setOnConvJoined(OnConvJoinedHandler h) {
         this.onConvJoined = h;
     }
+    public void setOnPendingListReceived(Consumer<String> cb){
+        this.onPendingListReceived = cb;
+    }
+
     public void connect() {
         try {
             socket = new Socket(host, port);
@@ -120,6 +132,7 @@ public class ClientConnection {
     }
 
     public void login(String username) {
+        this.currentUser = username;
         // gửi Packet LOGIN
         sendPacket(new Packet(PacketType.LOGIN, username, null));
     }
@@ -143,6 +156,8 @@ public class ClientConnection {
     }
     private void sendPacket(Packet p) {
         try {
+            System.out.println("[SEND] " + p.type() + " header=" + p.header());
+
             out.writeObject(p);
             out.flush();
         } catch (IOException e) {
@@ -173,7 +188,25 @@ public class ClientConnection {
                         }
                     }
                     case ACK -> {
-                        System.out.println("ACK: " + p.header());
+                        String header = p.header();
+                        System.out.println("[DEBUG] Nhận ACK: " + header);
+
+                        if ("LOGIN_OK".equals(header)) {
+                            /* ① Hỏi server danh sách lời mời */
+                            requestPendingFriendRequests(currentUser);
+
+                            /* ② báo cho UI (nếu cần) */
+                            if(onLoginSuccess != null)
+                                Platform.runLater(onLoginSuccess);
+                        }
+
+                        if (header.startsWith("FRIEND_REQUEST_")) {
+                            if (header.contains("FAIL")) {
+                                System.out.println("[ERROR] Friend request thất bại: " + header);
+                            } else {
+                                System.out.println("[DEBUG] Friend request thành công");
+                            }
+                        }
                     }
                     case USRLIST -> {
                         // p.header() = "ONLINE_USERS"
@@ -252,11 +285,11 @@ public class ClientConnection {
                     case AVATAR_DATA -> {
                         String username = p.header();
                         byte[] data = p.payload();
-                        
+
                         // Lưu avatar vào cache
                         Path cacheDir = Paths.get("avatar_cache");
                         if(!Files.exists(cacheDir)) Files.createDirectories(cacheDir);
-                        
+
                         Path file = cacheDir.resolve(username + ".png");
                         Files.write(file, data);
 
@@ -265,6 +298,14 @@ public class ClientConnection {
                             onAvatarUpdated.accept(username, data);
                         }
                     }
+
+                    case FRIEND_PENDING_LIST -> {
+                        if (onPendingListReceived != null) {
+                            String json = new String(p.payload());   // server gửi JSON list
+                            onPendingListReceived.accept(json);
+                        }
+                    }
+
 
                     default -> {}
                 }
@@ -365,7 +406,7 @@ public class ClientConnection {
                 try {
                     // Đọc file avatar thành byte[]
                     byte[] avatarData = Files.readAllBytes(avatarPath);
-                    
+
                     // Gọi callback để cập nhật UI
                     if (onAvatarUpdated != null) {
                         onAvatarUpdated.accept(currentUser, avatarData);
@@ -445,4 +486,34 @@ public class ClientConnection {
     public void requestUserList() {
         sendPacket(new Packet(PacketType.GET_USERLIST, "", null));
     }
+
+    public void sendFriendRequest(String from, String to) {
+        if (from == null || to == null || from.isBlank() || to.isBlank()) {
+            System.out.println("[ERROR] Invalid friend request parameters - from: " + from + ", to: " + to);
+            return;
+        }
+
+        System.out.println("[DEBUG] Sending friend request from " + from + " to " + to);
+        String header = from + "->" + to;
+        try {
+            sendPacket(new Packet(PacketType.FRIEND_REQUEST, header, null));
+            System.out.println("[DEBUG] Friend request packet sent successfully");
+        } catch (Exception e) {
+            System.out.println("[ERROR] Failed to send friend request packet: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public void acceptFriendRequest(String from, String to) {
+        String header = from + "->" + to;
+        sendPacket(new Packet(PacketType.FRIEND_ACCEPT, header, null));
+    }
+    public void rejectFriendRequest(String from, String to) {
+        String header = from + "->" + to;
+        sendPacket(new Packet(PacketType.FRIEND_REJECT, header, null));
+    }
+    public void requestPendingFriendRequests(String username) {
+        sendPacket(new Packet(PacketType.FRIEND_PENDING_LIST, username, null));
+    }
 }
+

@@ -1,102 +1,279 @@
-/* ============ Layout chung ============ */
-BorderPane { -fx-background-color: linear-gradient(to bottom right,#f5f7fa 0%,#c3cfe2 100%); }
+/* Root styles */
+.root {
+    -fx-background-color: #ffffff;
+    -fx-font-family: "Segoe UI", Arial, sans-serif;
+}
 
-/* Header với avatar và nút cài đặt */
-.chat-header {
-    -fx-padding: 10 15;
-    -fx-background-color: white;
-    -fx-background-radius: 18 18 0 0;
-    -fx-effect: dropshadow(one-pass-box, rgba(0,0,0,0.08), 8, 0, 0, 1);
+/* SplitPane styles */
+.split-pane {
+    -fx-background-color: transparent;
+    -fx-divider-position: 0.25;
+}
+
+.split-pane-divider {
+    -fx-background-color: #e4e6eb;
+    -fx-padding: 0 1px 0 1px;
+}
+
+/* Sidebar styles */
+.sidebar {
+    -fx-background-color: #ffffff;
+    -fx-border-color: #e4e6eb;
+    -fx-border-width: 0 1px 0 0;
+}
+
+.sidebar-header {
+    -fx-padding: 10px;
+    -fx-background-color: #ffffff;
+    -fx-border-color: #e4e6eb;
+    -fx-border-width: 0 0 1px 0;
+}
+
+/* Avatar styles */
+.avatar-circle {
+    -fx-stroke: #ffffff;
+    -fx-stroke-width: 2px;
+}
+
+.avatar-initial {
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-font-size: 14px;
 }
 
 .current-user-label {
     -fx-font-size: 16px;
     -fx-font-weight: bold;
-    -fx-text-fill: #333333;
+    -fx-text-fill: #1c1e21;
 }
 
-.avatar-circle {
-    -fx-fill: #e0e0e0;
+/* Tab styles */
+.custom-tab {
+    -fx-background-color: transparent;
 }
 
-.avatar-initial {
+.custom-tab .tab-header-area .tab-header-background {
+    -fx-background-color: transparent;
+}
+
+.custom-tab .tab-label {
+    -fx-text-fill: #65676b;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+}
+
+.custom-tab:selected .tab-label {
+    -fx-text-fill: #1877f2;
+}
+
+.tab-content {
+    -fx-padding: 10px;
+}
+
+/* Search field styles */
+.search-field {
+    -fx-background-color: #f0f2f5;
+    -fx-background-radius: 20px;
+    -fx-padding: 8px 15px;
+    -fx-font-size: 14px;
+}
+
+.search-field:focused {
+    -fx-background-color: #e4e6eb;
+}
+
+/* List styles */
+.user-list, .group-list {
+    -fx-background-color: transparent;
+    -fx-background-insets: 0;
+    -fx-padding: 5px;
+}
+
+.user-list .list-cell, .group-list .list-cell {
+    -fx-background-color: transparent;
+    -fx-padding: 8px;
+    -fx-border-color: transparent transparent #e4e6eb transparent;
+    -fx-border-width: 0 0 1px 0;
+}
+
+.user-list .list-cell:hover, .group-list .list-cell:hover {
+    -fx-background-color: #f0f2f5;
+}
+
+.user-list .list-cell:selected, .group-list .list-cell:selected {
+    -fx-background-color: #e4e6eb;
+}
+
+/* Chat area styles */
+.chat-area {
+    -fx-background-color: #ffffff;
+}
+
+.chat-header {
+    -fx-padding: 10px;
+    -fx-background-color: #ffffff;
+    -fx-border-color: #e4e6eb;
+    -fx-border-width: 0 0 1px 0;
+}
+
+.chat-title-label {
     -fx-font-size: 16px;
     -fx-font-weight: bold;
-    -fx-text-fill: white;
+    -fx-text-fill: #1c1e21;
 }
 
-.msg-container  { -fx-padding: 12; }
-.input-bar      { -fx-padding: 10 12; -fx-background-color: rgba(255,255,255,0.6);
-    -fx-background-radius: 0 0 18 18; -fx-effect: dropshadow(one-pass-box,rgba(0,0,0,0.08),8,0,0,-1); }
-
-.icon-btn       { -fx-background-color: transparent; -fx-cursor: hand; }
-.icon-btn:hover { -fx-background-color: rgba(0,0,0,0.04); -fx-background-radius: 6; }
-
-.icon-btn.attach { -fx-graphic: url("../icons/paperclip.png"); }
-.icon-btn.emoji  { -fx-graphic: url("../icons/smile.png");     }
-
-.send-btn {
-    -fx-background-color:#4361ee; -fx-text-fill:white; -fx-font-weight:600;
-    -fx-background-radius: 24; -fx-padding:6 18;
-}
-.send-btn:pressed { -fx-scale-x:0.97; -fx-scale-y:0.97; }
-
-/* ============ List view ============ */
-.list-view { -fx-background-insets: 0; }
-.list-cell:selected { -fx-background-color: #eef2ff; }
-.list-cell:filled:selected:focused { -fx-background-color: #d6e0ff; }
-
-/* Tùy chỉnh hiển thị người dùng trực tuyến */
-.online-user-cell {
-    -fx-padding: 8 12;
-    -fx-spacing: 10;
+/* Messages area styles */
+.messages-scroll {
+    -fx-background-color: #ffffff;
 }
 
-.online-user-avatar {
-    -fx-background-radius: 15;
-    -fx-min-width: 30;
-    -fx-min-height: 30;
-    -fx-max-width: 30;
-    -fx-max-height: 30;
+.messages-container {
+    -fx-padding: 10px;
 }
 
-.online-user-name {
-    -fx-font-size: 14px;
-    -fx-text-fill: #333333;
+/* Message bubble styles */
+.message-bubble {
+    -fx-background-radius: 15px;
+    -fx-padding: 8px 12px;
+    -fx-max-width: 400px;
 }
 
-.online-user-status {
-    -fx-font-size: 12px;
-    -fx-text-fill: #4caf50;
+.message-bubble.incoming {
+    -fx-background-color: #f0f2f5;
 }
 
-.create-btn {
-    -fx-background-color:#14b8a6; -fx-text-fill:white; -fx-font-weight:600;
-    -fx-background-radius: 20; -fx-padding:6 16; -fx-cursor:hand;
-}
-.create-btn:hover { -fx-background-color:#0d9488; }
-
-.msg-container  { -fx-padding:12; -fx-background-color:#f6f7f9; }
-.scroll-pane    { -fx-background-insets:0; -fx-background-color:transparent; }
-
-
-/* ============ Bubbles (đã tạo sẵn trong ChatController) ============ */
-/* Nếu muốn đổi màu nữa: sửa trong ChatController.buildMsgNode() */
-/* ============ File Message Styling ============ */
-.file-message {
-    -fx-background-color: #f0f0f0;
-    -fx-background-radius: 10;
-    -fx-padding: 10;
-}
-
-.file-message.outgoing {
+.message-bubble.outgoing {
     -fx-background-color: #0084ff;
 }
 
-.file-name {
-    -fx-font-weight: bold;
+.message-bubble.outgoing .text {
+    -fx-fill: white;
 }
 
-.file-size {
-    -fx-text-fill: #666666;
+.message-bubble.incoming .text {
+    -fx-fill: #1c1e21;
+}
+
+/* Input area styles */
+.input-bar {
+    -fx-padding: 10px;
+    -fx-background-color: #ffffff;
+    -fx-border-color: #e4e6eb;
+    -fx-border-width: 1px 0 0 0;
+}
+
+.message-input {
+    -fx-background-color: #f0f2f5;
+    -fx-background-radius: 20px;
+    -fx-padding: 8px 15px;
+    -fx-font-size: 14px;
+}
+
+.message-input:focused {
+    -fx-background-color: #e4e6eb;
+}
+
+/* Button styles */
+.icon-btn {
+    -fx-background-color: transparent;
+    -fx-padding: 8px;
+    -fx-cursor: hand;
+}
+
+.icon-btn:hover {
+    -fx-background-color: #f0f2f5;
+    -fx-background-radius: 50%;
+}
+
+.send-btn {
+    -fx-background-color: #0084ff;
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-padding: 8px 20px;
+    -fx-background-radius: 20px;
+    -fx-cursor: hand;
+}
+
+.send-btn:hover {
+    -fx-background-color: #0073e6;
+}
+
+.create-group-btn {
+    -fx-background-color: #e4e6eb;
+    -fx-text-fill: #1c1e21;
+    -fx-font-weight: bold;
+    -fx-padding: 8px 15px;
+    -fx-background-radius: 6px;
+    -fx-cursor: hand;
+}
+
+.create-group-btn:hover {
+    -fx-background-color: #d8dadf;
+}
+
+.back-btn {
+    -fx-background-color: transparent;
+    -fx-padding: 8px;
+    -fx-cursor: hand;
+}
+
+.back-btn:hover {
+    -fx-background-color: #f0f2f5;
+    -fx-background-radius: 50%;
+}
+
+/* Scrollbar styles */
+.scroll-bar {
+    -fx-background-color: transparent;
+}
+
+.scroll-bar .thumb {
+    -fx-background-color: #bcc0c4;
+    -fx-background-radius: 10px;
+}
+
+.scroll-bar .thumb:hover {
+    -fx-background-color: #8d949e;
+}
+
+.scroll-bar .increment-button,
+.scroll-bar .decrement-button {
+    -fx-background-color: transparent;
+    -fx-padding: 0;
+}
+
+.scroll-bar .increment-arrow,
+.scroll-bar .decrement-arrow {
+    -fx-shape: " ";
+    -fx-padding: 0;
+}
+
+/* Nút kết bạn đẹp */
+.add-friend-btn {
+    -fx-background-color: linear-gradient(to right, #36d1c4, #0084ff);
+    -fx-text-fill: white;
+    -fx-background-radius: 16;
+    -fx-font-weight: bold;
+    -fx-effect: dropshadow(gaussian, #0084ff, 4, 0.2, 0, 2);
+    -fx-cursor: hand;
+    -fx-padding: 6px 18px;
+    -fx-font-size: 13px;
+    -fx-border-width: 0;
+}
+.add-friend-btn:disabled {
+    -fx-background-color: #bdbdbd;
+    -fx-text-fill: #333;
+}
+
+/* Badge "Đã gửi" */
+.friend-badge {
+    -fx-background-color: #bdbdbd;
+    -fx-text-fill: #333;
+    -fx-background-radius: 16;
+    -fx-font-size: 12px;
+    -fx-padding: 2 10 2 10;
+    -fx-font-weight: bold;
+}
+.friend-badge:hover {
+    -fx-background-color: #a6a6a6;
 }

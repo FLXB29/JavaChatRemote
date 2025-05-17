@@ -49,4 +49,13 @@ public class UserDAO {
             return session.createQuery("FROM User", User.class).list();
         }
     }
+
+    public List<User> searchByUsernamePrefix(String keyword) {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            String sql = "SELECT * FROM users WHERE MATCH(username) AGAINST(:kw IN BOOLEAN MODE) LIMIT 10";
+            return session.createNativeQuery(sql, User.class)
+                    .setParameter("kw", "+" + keyword + "*")
+                    .list();
+        }
+    }
 }

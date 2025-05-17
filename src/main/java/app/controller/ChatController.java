@@ -52,6 +52,11 @@ import javafx.scene.text.TextFlow;
 import javafx.scene.shape.Circle;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
+import app.service.FriendshipService;
+import app.service.MessageReceiptService;
+import app.service.NotificationService;
+import java.util.concurrent.CompletableFuture;
+import app.model.Friendship;
 
 public class ChatController {
 
@@ -68,13 +73,7 @@ public class ChatController {
     private Button btnAttachFile, btnEmoji, btnSend, btnSettings, btnBack;
 
     @FXML
-    private ListView<String> listOnlineUsers;
-
-    @FXML
-    private Button btnCreateGroup;
-
-    @FXML
-    private ListView<String> listGroups; // Đảm bảo fx:id khớp với FXML
+    private ListView<String> listGroups;
 
     @FXML
     private SplitPane rootSplit;
@@ -90,6 +89,9 @@ public class ChatController {
     
     @FXML
     private Label currentUserLabel;
+
+    @FXML
+    private Label chatTitleLabel;
 
     // 1) Thuộc tính
     private String lastPmTarget;
@@ -122,96 +124,41 @@ public class ChatController {
     private final Map<String, User> onlineUsers = new HashMap<>();
 
     @FXML
+    private ListView<User> listSearchUsers;
+
+    // Thay vì onlineUsers, dùng map bạn bè
+    private final Map<String, User> friendMap = new HashMap<>();
+    private final Map<String, Integer> unreadMap = new HashMap<>();
+
+    @FXML
+    private ListView<RecentChatCellData> listRecentChats;
+
+    @FXML
+    private ListView<Friendship> listFriendRequests;
+
+    @FXML
+    private TabPane tabPane;
+
+    // Data class cho cell đoạn chat gần đây
+    public static class RecentChatCellData {
+        public final String chatName; // tên bạn bè hoặc nhóm
+        public final String lastMessage;
+        public final String time;
+        public final String avatarPath;
+        public final int unreadCount;
+        public RecentChatCellData(String chatName, String lastMessage, String time, String avatarPath, int unreadCount) {
+            this.chatName = chatName;
+            this.lastMessage = lastMessage;
+            this.time = time;
+            this.avatarPath = avatarPath;
+            this.unreadCount = unreadCount;
+        }
+    }
+
+    @FXML
     private void initialize() {
-        // Set the divider position immediately
-        rootSplit.setDividerPosition(0, 0.75);
-
-        // Tùy chỉnh hiển thị người dùng trực tuyến
-        listOnlineUsers.setCellFactory(lv -> new ListCell<String>() {
-
-            /* ---------- node hiển thị ---------- */
-            private final Circle avatarCircle = new Circle(15);            // khung tròn
-            private final Label   initialLbl   = new Label();              // chữ cái đầu
-            private final StackPane avatarPane = new StackPane(avatarCircle, initialLbl);
-
-            private final Label nameLabel   = new Label();
-            private final Label statusLabel = new Label("Trực tuyến");
-            private final HBox  hbox        = new HBox(10, avatarPane, nameLabel, statusLabel);
-
-            {
-                /* ---------- CSS / layout ---------- */
-                hbox.setAlignment(Pos.CENTER_LEFT);
-                hbox.setPadding(new Insets(5, 10, 5, 10));
-                hbox.getStyleClass().add("online-user-cell");
-
-                avatarCircle.getStyleClass().add("online-user-avatar");
-                initialLbl.setStyle("-fx-text-fill: white; -fx-font-weight: bold;");
-
-                nameLabel.getStyleClass().add("online-user-name");
-                statusLabel.getStyleClass().add("online-user-status");
-            }
-
-            @Override
-            protected void updateItem(String item, boolean empty) {
-                super.updateItem(item, empty);
-
-                if (empty || item == null) {
-                    setGraphic(null);
-                    return;
-                }
-
-                nameLabel.setText(item);
-                User user = onlineUsers.get(item);
-
-                /* ---------- 1) Xử lý avatar ---------- */
-                if (user != null && !user.isUseDefaultAvatar() && user.getAvatarPath() != null) {
-                    // Có avatar tùy chỉnh
-                    File avatarFile = new File(user.getAvatarPath());
-                    if (avatarFile.exists()) {
-                        avatarCircle.setFill(new ImagePattern(
-                                new Image(avatarFile.toURI().toString(), false)));
-                    } else {
-                        // File mất → fallback mặc định
-                        setDefaultAvatar(item);
-                    }
-                    initialLbl.setVisible(false);            // ẩn chữ cái đầu
-                } else {
-                    // Avatar mặc định
-                    setDefaultAvatar(item);
-                }
-
-                /* ---------- 2) Tô viền khi được chọn ---------- */
-                if (isSelected()) {
-                    avatarCircle.setStroke(Color.web("#4361ee"));
-                } else {
-                    avatarCircle.setStroke(Color.WHITE);
-                }
-                avatarCircle.setStrokeWidth(2);
-
-                setGraphic(hbox);                           // hiển thị cell
-            }
-
-            /* ======== hàm tiện ích ======== */
-            private void setDefaultAvatar(String username) {
-                int colorIndex = Math.abs(username.hashCode() % AVATAR_COLORS.length);
-                avatarCircle.setFill(AVATAR_COLORS[colorIndex]);
-
-                initialLbl.setText(username.substring(0, 1).toUpperCase());
-                initialLbl.setVisible(true);
-            }
-        });
-
         // 1) Gọi service bind UI (nếu bạn cần)
         ServiceLocator.chat().bindUI(this);
-        Platform.runLater(() -> {
-            rootSplit.setDividerPosition(0, 0.75);
-
-            /* khoá lại nếu muốn */
-            rootSplit.getDividers().get(0).positionProperty().addListener((o,oldV,newV)->{
-                if(Math.abs(newV.doubleValue() - 0.75) > 0.001)
-                    rootSplit.setDividerPosition(0, 0.75);
-            });
-        });
 
         // 2) Lấy clientConnection từ ChatService
         this.clientConnection = ServiceLocator.chat().getClient();
@@ -219,40 +166,15 @@ public class ChatController {
         // 3) Kiểm tra null
         if (this.clientConnection == null) {
             System.out.println("ChatController: clientConnection == null trong initialize()!");
-            // Có thể return hoặc xử lý chờ
             return;
         }
+        System.out.println("[DEBUG] searchField = " + searchField);
 
-        // 4) Thiết lập callback user list
-        clientConnection.setOnUserListReceived(users -> {
-            Platform.runLater(() -> {
-                // Xóa danh sách cũ
-                onlineUsers.clear();
-                listOnlineUsers.getItems().clear();
-
-                // Thêm Global vào đầu danh sách
-                listOnlineUsers.getItems().add("Global");
-                
-                // Thêm các user online và cập nhật thông tin
-                for (String username : users) {
-                    if (!username.equals(getCurrentUser())) {
-                        listOnlineUsers.getItems().add(username);
-                        // Lấy thông tin user từ UserService
-                        User user = ServiceLocator.userService().getUser(username);
-                        if (user != null) {
-                            onlineUsers.put(username, user);
-                        }
-                    }
-                }
-                
-                // Cập nhật hiển thị
-                listOnlineUsers.refresh();
-            });
-        });
 
         clientConnection.setOnTextReceived((from, content) -> {
             if (!"Global".equals(currentTarget)) return;          // ② LỌC
             Platform.runLater(() -> {
+                if (from == null) return; // Thêm kiểm tra null
                 boolean out = from.equals(getCurrentUser());
                 displayMessage(from, content, out, LocalDateTime.now());
             });
@@ -261,25 +183,18 @@ public class ChatController {
         // callback khi server xác nhận Join
         clientConnection.setOnConvJoined(cid -> joinedConv.put(cid, true));
 
-        listOnlineUsers.getSelectionModel().selectedItemProperty().addListener((obs, oldVal, newVal) -> {
-            if (newVal != null) {
-                System.out.println("Chọn target: " + newVal + ", fromUser: " + getCurrentUser());
-                this.currentTarget = newVal;
-                try {
-                    clientConnection.requestHistory(getCurrentUser(), currentTarget);
-                    System.out.println("Gửi yêu cầu lịch sử cho " + getCurrentUser() + "->" + currentTarget);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    Platform.runLater(() -> {
-                        Alert alert = new Alert(Alert.AlertType.ERROR);
-                        alert.setHeaderText("Lỗi gửi yêu cầu lịch sử");
-                        alert.setContentText("Chi tiết: " + e.getMessage());
-                        alert.showAndWait();
-                    });
-                }
-                listOnlineUsers.refresh();
-            }
-        });
+        listGroups.getSelectionModel()
+                .selectedItemProperty()
+                .addListener((obs, oldVal, newVal) -> {
+                    if (newVal == null) return;
+
+                    currentTarget = newVal;               // gán target = tên nhóm
+                    chatTitleLabel.setText(newVal);       // Cập nhật tiêu đề chat
+                    long cid = groupMap.get(newVal);
+
+                    clientConnection.joinConv(cid);       // yêu cầu SERVER gửi HISTORY
+                    listGroups.refresh();
+                });
 
         clientConnection.setOnHistory((convId, json) -> {
             var msgList = parseJsonToMessageDTO(json);
@@ -306,9 +221,10 @@ public class ChatController {
 
         clientConnection.setOnConvList(json -> {
             // 1) parse JSON nhận từ server
-            List<Map<String,Object>> list = new Gson().fromJson(
+            List<Map<String, Object>> list = new Gson().fromJson(
                     json, new com.google.gson.reflect.TypeToken<
-                            List<Map<String,Object>>>(){}.getType());
+                            List<Map<String, Object>>>() {
+                    }.getType());
 
             Platform.runLater(() -> {
                 // 2) xoá danh sách cũ
@@ -316,12 +232,12 @@ public class ChatController {
                 groupMap.clear();
 
                 // 3) duyệt tất cả conversation
-                for (Map<String,Object> c : list) {
+                for (Map<String, Object> c : list) {
                     String type = (String) c.get("type");
                     if (!"GROUP".equals(type)) continue;          // chỉ quan tâm GROUP
 
                     String name = (String) c.get("name");
-                    Long   id   = ((Number) c.get("id")).longValue();
+                    Long id = ((Number) c.get("id")).longValue();
 
                     // 3a. cập nhật UI tab Group
                     listGroups.getItems().add(name);
@@ -329,25 +245,12 @@ public class ChatController {
                     groupMap.put(name, id);
                 }
                 listGroups.refresh();
-                listOnlineUsers.refresh();
             });
         });
 
-        listGroups.getSelectionModel()
-                .selectedItemProperty()
-                .addListener((obs, oldVal, newVal) -> {
-                    if(newVal == null) return;
-
-                    currentTarget = newVal;               // gán target = tên nhóm
-                    long cid = groupMap.get(newVal);
-
-                    clientConnection.joinConv(cid);       // yêu cầu SERVER gửi HISTORY
-                    listGroups.refresh();
-                });
-
         clientConnection.setOnGroupMsg((convId, from, content) -> {
             // chỉ hiện nếu màn hình đang mở đúng group
-            if(!groupMap.containsKey(currentTarget)
+            if (!groupMap.containsKey(currentTarget)
                     || groupMap.get(currentTarget) != convId) return;
 
             boolean isOutgoing = from.equals(getCurrentUser());
@@ -399,14 +302,221 @@ public class ChatController {
                     }
 
                     // Refresh danh sách để cập nhật avatar trong list online users
-                    listOnlineUsers.refresh();
+                    listRecentChats.refresh();
                 } catch (Exception e) {
                     e.printStackTrace();
                     showError("Không thể cập nhật avatar", e);
                 }
             });
         });
+        // Xử lý click vào user trong listSearchUsers
+        listSearchUsers.setOnMouseClicked(ev -> {
+
+            /* Bỏ qua click nếu nó nằm bên trong Button (hoặc con của ButtonBase) */
+            Node node = ev.getPickResult().getIntersectedNode();
+            while (node != null && !(node instanceof ListCell)) {
+                /* Button, Label, Region, Text bên trong Button đều kế thừa ButtonBase/Labeled */
+                if (node instanceof ButtonBase || node instanceof Labeled) return;
+                node = node.getParent();
+            }
+
+            /* ---------- phần mở chat khi click row ---------- */
+            User selected = listSearchUsers.getSelectionModel().getSelectedItem();
+            if (selected == null) return;
+
+            User me = ServiceLocator.userService().getUser(currentUser);
+            Friendship.Status st =
+                    ServiceLocator.friendship().getFriendshipStatus(me, selected);
+
+            if (st == Friendship.Status.ACCEPTED) {
+                openPrivateConversation(selected);
+            } else {
+                showWarn("Bạn cần kết bạn với người này để bắt đầu trò chuyện.");
+            }
+        });
+
+
+        clientConnection.setOnPendingListReceived(json -> {
+            Gson gson = new GsonBuilder()
+                    .registerTypeAdapter(LocalDateTime.class,
+                            new LocalDateTimeAdapter())   // ← dùng lại adapter
+                    .create();
+
+            Type type = new TypeToken<List<Friendship>>(){}.getType();
+            List<Friendship> list = gson.fromJson(json, type);
+
+            updateFriendRequests(list);   // hàm đã viết
+        });
+
+
+
+        tabPane.getSelectionModel().selectedItemProperty()
+                .addListener((obs, oldTab, newTab) -> {
+                    if (newTab.getText().equals("Lời mời")) {
+                        refreshFriendRequests();
+                    }
+                });
+
+
+        // Khi searchField rỗng hoặc không focus, hiển thị recentChats, ẩn searchUsers
+        searchField.textProperty().addListener((obs, oldVal, newVal) -> {
+            boolean isSearching = newVal != null && !newVal.isBlank();
+            listRecentChats.setVisible(!isSearching);
+            listRecentChats.setManaged(!isSearching);
+            listSearchUsers.setVisible(isSearching);
+            listSearchUsers.setManaged(isSearching);
+            if (isSearching) {
+                CompletableFuture.runAsync(() -> {
+                    List<User> found = ServiceLocator.userService().searchUsers(newVal);
+                    System.out.println("[DEBUG] search '" + newVal + "' => " + found.size() + " users");
+
+                    Platform.runLater(() -> {
+                        listSearchUsers.getItems().setAll(found);
+                    });
+                });
+            }
+        });
+        // Khi mất focus, quay lại recentChats
+        searchField.focusedProperty().addListener((obs, was, isNow) -> {
+            if (!isNow) {
+                listRecentChats.setVisible(true);
+                listRecentChats.setManaged(true);
+                listSearchUsers.setVisible(false);
+                listSearchUsers.setManaged(false);
+            }
+        });
+        // Load recent chats khi khởi động
+        loadRecentChats();
+
+        // Khi vào tab Lời mời, gửi yêu cầu lấy danh sách lời mời lên server
+        tabPane.getSelectionModel().selectedItemProperty().addListener((obs,o,t)->{
+            if ("Lời mời".equals(t.getText())) {
+                clientConnection.requestPendingFriendRequests(currentUser);
+            }
+        });
+
+        // Custom cell cho listFriendRequests
+        listSearchUsers.setCellFactory(lv -> new ListCell<User>() {
+
+            private final Circle avatarCircle = new Circle(15);
+            private final Label initialLabel = new Label();
+            private final Label nameLabel = new Label();
+            private final Button addFriendBtn = new Button("Kết bạn");
+            private final HBox hbox = new HBox(
+                    10,
+                    new StackPane(avatarCircle, initialLabel),
+                    nameLabel,
+                    addFriendBtn
+            );
+
+
+
+
+            {   /*––– KHỞI-TẠO: chạy MỘT lần cho cell –––*/
+                hbox.setAlignment(Pos.CENTER_LEFT);
+                hbox.setPadding(new Insets(5, 10, 5, 10));
+                hbox.setPickOnBounds(false);   // ← THÊM
+
+                avatarCircle.getStyleClass().add("search-user-avatar");
+                nameLabel.getStyleClass().add("search-user-name");
+                addFriendBtn.getStyleClass().add("add-friend-btn");
+
+                /* gắn handler duy nhất */
+                addFriendBtn.setOnAction(evt -> {
+                    User target = getItem();          // user hiện tại của cell
+                    if (target == null) return;
+
+                    System.out.println("[DEBUG] Click Kết bạn → " + target.getUsername());
+
+                    if (clientConnection == null) {
+                        showError("Chưa kết nối server – không gửi được!", null);
+                        return;
+                    }
+
+                    Alert cf = new Alert(Alert.AlertType.CONFIRMATION,
+                            "Gửi lời mời kết bạn tới "
+                                    + (target.getFullName() != null ? target.getFullName()
+                                    : target.getUsername()) + "?",
+                            ButtonType.OK, ButtonType.CANCEL);
+
+                    if (cf.showAndWait().orElse(ButtonType.CANCEL) == ButtonType.OK) {
+                        clientConnection.sendFriendRequest(currentUser,
+                                target.getUsername());
+                        System.out.println("[DEBUG] Packet FRIEND_REQUEST đã gửi");
+
+                        addFriendBtn.setText("Đã gửi");
+                        addFriendBtn.setDisable(true);
+                        addFriendBtn.getStyleClass().add("friend-badge");
+                    }
+                });
+            }
+
+            @Override
+            protected void updateItem(User user, boolean empty) {
+                super.updateItem(user, empty);
+                if (empty || user == null) {
+                    setGraphic(null);
+                    return;
+                }
+
+                /* reset nút mỗi lần cell tái dụng */
+                addFriendBtn.setText("Kết bạn");
+                addFriendBtn.setDisable(false);
+                addFriendBtn.getStyleClass().remove("friend-badge");
+
+                nameLabel.setText(user.getFullName() != null && !user.getFullName().isBlank()
+                        ? user.getFullName() : user.getUsername());
+
+                if (!user.isUseDefaultAvatar() && user.getAvatarPath() != null) {
+                    File f = new File(user.getAvatarPath());
+                    if (f.exists()) {
+                        avatarCircle.setFill(
+                                new ImagePattern(new Image(f.toURI().toString(), false)));
+                        initialLabel.setVisible(false);
+                    } else setDefaultAvatar(user.getUsername());
+                } else setDefaultAvatar(user.getUsername());
+
+                setGraphic(hbox);
+            }
+
+            private void setDefaultAvatar(String username) {
+                int c = Math.abs(username.hashCode() % AVATAR_COLORS.length);
+                avatarCircle.setFill(AVATAR_COLORS[c]);
+                initialLabel.setText(username.substring(0, 1).toUpperCase());
+                initialLabel.setVisible(true);
+            }
+        });
+        refreshFriendRequests();       // thêm ở cuối
+
     }
+
+        private void loadRecentChats() {
+        CompletableFuture.runAsync(() -> {
+            // Lấy danh sách bạn bè và nhóm, sắp xếp theo lastMessageAt (giả sử có hàm ServiceLocator.messageService().getRecentChats())
+            List<RecentChatCellData> data = ServiceLocator.messageService().getRecentChats(ServiceLocator.userService().getCurrentUser());
+            Platform.runLater(() -> {
+                listRecentChats.getItems().setAll(data);
+            });
+        });
+    }
+
+    private void refreshFriendRequests() {
+        CompletableFuture.runAsync(() -> {
+            User me = ServiceLocator.userService().getUser(currentUser);
+            List<Friendship> pending = ServiceLocator.friendship()
+                    .getPendingRequests(me);
+            Platform.runLater(() ->
+                    listFriendRequests.getItems().setAll(pending));
+        });
+    }
+
+    /* Dùng từ clientConnection */
+    public void updateFriendRequests(List<Friendship> list) {
+        Platform.runLater(() ->
+                listFriendRequests.getItems().setAll(list));
+    }
+
+
 
     public void setCurrentUser(String username) {
         this.currentUser = username;
@@ -445,7 +555,9 @@ public class ChatController {
 
         /* BƯỚC 2: chọn thành viên */
         ListView<CheckBox> lv = new ListView<>();
-        for (String u : listOnlineUsers.getItems()) {
+        // Lấy danh sách bạn bè từ recentChats
+        for (RecentChatCellData chat : listRecentChats.getItems()) {
+            String u = chat.chatName;
             if (u.equals("Global") || u.equals(getCurrentUser())) continue;
             lv.getItems().add(new CheckBox(u));
         }
@@ -1018,6 +1130,27 @@ public class ChatController {
         } catch (IOException e) {
             e.printStackTrace();
             showError("Không thể quay lại trang chat", e);
+        }
+    }
+
+    // Thêm hàm mở conversation riêng tư
+    private void openPrivateConversation(User user) {
+        // Đặt currentTarget là username của user đó
+        this.currentTarget = user.getUsername();
+        chatTitleLabel.setText(user.getFullName() != null ? user.getFullName() : user.getUsername());
+        // Có thể load lịch sử tin nhắn với user này nếu muốn
+        // ...
+        // Ví dụ: clear messagesContainer và load lại tin nhắn với user này
+        messagesContainer.getChildren().clear();
+        List<Message> oldMessages = ServiceLocator.messageService().getMessagesWithUser(currentUser, user.getUsername());
+        for (Message m : oldMessages) {
+            boolean isOutgoing = m.getSender().getUsername().equals(currentUser);
+            displayMessage(
+                m.getSender().getUsername(),
+                m.getContent(),
+                isOutgoing,
+                m.getCreatedAt()
+            );
         }
     }
 }

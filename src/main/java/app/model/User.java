@@ -3,6 +3,7 @@ package app.model;
 import jakarta.persistence.*;
 import java.util.HashSet;
 import java.util.Set;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name="users")
@@ -32,6 +33,8 @@ public class User {
     private String otpCode; // Mã OTP tạm thời cho xác thực hai yếu tố
     
     private Long otpExpiryTime; // Thời gian hết hạn của mã OTP
+
+    private LocalDateTime lastActiveAt;
 
     @OneToMany(mappedBy="user", cascade=CascadeType.ALL)
     private Set<Membership> memberships = new HashSet<>();
@@ -131,6 +134,14 @@ public class User {
     
     public void setOtpExpiryTime(Long otpExpiryTime) {
         this.otpExpiryTime = otpExpiryTime;
+    }
+
+    public LocalDateTime getLastActiveAt() {
+        return lastActiveAt;
+    }
+
+    public void setLastActiveAt(LocalDateTime lastActiveAt) {
+        this.lastActiveAt = lastActiveAt;
     }
 
     // ... getter, setter khác ...

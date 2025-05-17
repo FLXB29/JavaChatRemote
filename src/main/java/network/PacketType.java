@@ -21,5 +21,10 @@ public enum PacketType {
     AVATAR_UPLOAD,  // upload avatar mới
     AVATAR_DATA,    // dữ liệu avatar
     GET_AVATAR,     // yêu cầu avatar
-    GET_USERLIST    // yêu cầu danh sách user online
+    GET_USERLIST,   // yêu cầu danh sách user online
+    FRIEND_REQUEST,      // gửi lời mời kết bạn
+    FRIEND_ACCEPT,       // chấp nhận lời mời
+    FRIEND_REJECT,       // từ chối lời mời
+    FRIEND_PENDING_LIST, // trả về danh sách lời mời PENDING
+    FRIEND_STATUS        // trả về trạng thái bạn bè
 }

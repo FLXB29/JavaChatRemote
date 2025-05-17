@@ -38,4 +38,10 @@ public class MessageDAO {
                     .list();
         }
     }
+
+    public List<Message> findAll() {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            return session.createQuery("FROM Message", Message.class).list();
+        }
+    }
 }

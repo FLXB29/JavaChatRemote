@@ -9,10 +9,13 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 public class UserService {
     private final UserDAO userDAO;
+    private static String currentUsername;
 
     public UserService() {
         this.userDAO = new UserDAO();
@@ -58,7 +61,9 @@ public class UserService {
             return false;  // không có user
         }
         // So sánh password
-        return PasswordUtil.checkPassword(plainPassword, user.getPasswordHash());
+        boolean ok = PasswordUtil.checkPassword(plainPassword, user.getPasswordHash());
+        if (ok) currentUsername = username;
+        return ok;
     }
 
     /**
@@ -220,5 +225,14 @@ public class UserService {
         // EmailUtil.sendOTPEmail(user.getEmail(), otp);
         
         return otp;
+    }
+
+    public User getCurrentUser() {
+        if (currentUsername == null) return null;
+        return userDAO.findByUsername(currentUsername);
+    }
+
+    public List<User> searchUsers(String keyword) {
+        return userDAO.searchByUsernamePrefix(keyword);
     }
 }

@@ -7,24 +7,22 @@
 <?import javafx.scene.shape.Circle?>
 <?import javafx.geometry.Insets?>
 
-<!-- ROOT phải là SplitPane để có divider -->
-<SplitPane fx:id="rootSplit" dividerPositions="0.75" stylesheets="@/css/chat.css" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="app.controller.ChatController">
+<SplitPane fx:id="rootSplit" dividerPositions="0.22" stylesheets="@/css/chat.css" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="app.controller.ChatController">
 
-    <!-- ======= PANE 0: Vùng tin nhắn ======= -->
-    <VBox prefWidth="540" spacing="6">
-        
+    <!-- ======= PANE 0: Vùng người dùng online ======= -->
+    <VBox prefWidth="260" minWidth="220" maxWidth="340" styleClass="sidebar">
         <!-- Header với avatar và nút cài đặt -->
-        <HBox alignment="CENTER_LEFT" spacing="10" styleClass="chat-header">
+        <HBox alignment="CENTER_LEFT" spacing="10" styleClass="sidebar-header">
             <StackPane>
                 <Circle fx:id="userAvatarCircle" radius="20" styleClass="avatar-circle"/>
                 <ImageView fx:id="userAvatarImage" fitWidth="40" fitHeight="40" preserveRatio="true"/>
                 <Label fx:id="userInitialLabel" styleClass="avatar-initial"/>
             </StackPane>
-            
+
             <Label fx:id="currentUserLabel" styleClass="current-user-label"/>
-            
+
             <Region HBox.hgrow="ALWAYS"/>
-            
+
             <Button fx:id="btnSettings" onAction="#onOpenSettings" styleClass="icon-btn">
                 <graphic>
                     <ImageView fitWidth="20" preserveRatio="true">
@@ -36,16 +34,61 @@
             </Button>
         </HBox>
 
-        <!-- Danh sách tin -->
-        <ScrollPane fx:id="scrollPane" fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="ALWAYS" VBox.vgrow="ALWAYS">
+        <!-- Tab Bạn bè/Group -->
+        <TabPane fx:id="tabPane" tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS">
+            <!-- Bạn bè -->
+            <Tab text="Bạn bè" styleClass="custom-tab">
+                <VBox spacing="6" styleClass="tab-content">
+                    <TextField fx:id="searchField" promptText="Tìm kiếm bạn bè hoặc người dùng..." styleClass="search-field"/>
+                    <!-- ListView đoạn chat gần đây, mặc định hiển thị -->
+                    <ListView fx:id="listRecentChats" VBox.vgrow="ALWAYS" styleClass="user-list"/>
+                    <!-- ListView tìm kiếm user, ẩn mặc định -->
+                    <ListView fx:id="listSearchUsers" visible="false" managed="false" styleClass="user-list search-popup" VBox.vgrow="NEVER"/>
+                </VBox>
+            </Tab>
+
+            <!-- Lời mời -->
+            <Tab text="Lời mời" styleClass="custom-tab">
+                <VBox spacing="6" styleClass="tab-content">
+                    <ListView fx:id="listFriendRequests" VBox.vgrow="ALWAYS" styleClass="user-list"/>
+                </VBox>
+            </Tab>
+
+            <!-- Nhóm -->
+            <Tab text="Nhóm" styleClass="custom-tab">
+                <VBox spacing="6" styleClass="tab-content">
+                    <Button fx:id="btnCreateGroup" prefHeight="36.0" styleClass="create-group-btn" text="Tạo nhóm mới" onAction="#onCreateGroup" />
+                    <ListView fx:id="listGroups" VBox.vgrow="ALWAYS" styleClass="group-list"/>
+                </VBox>
+            </Tab>
+        </TabPane>
+    </VBox>
+
+    <!-- ======= PANE 1: Vùng chat ======= -->
+    <VBox styleClass="chat-area">
+        <!-- Chat header -->
+        <HBox alignment="CENTER_LEFT" spacing="10" styleClass="chat-header">
+            <Button fx:id="btnBack" onAction="#onBack" styleClass="back-btn">
+                <graphic>
+                    <ImageView fitWidth="20" preserveRatio="true">
+                        <image>
+                            <Image url="@/icons/back.png" />
+                        </image>
+                    </ImageView>
+                </graphic>
+            </Button>
+            <Label fx:id="chatTitleLabel" styleClass="chat-title-label"/>
+        </HBox>
+
+        <!-- Messages area -->
+        <ScrollPane fx:id="scrollPane" fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="ALWAYS" VBox.vgrow="ALWAYS" styleClass="messages-scroll">
             <content>
-                <VBox fx:id="messagesContainer" spacing="10" styleClass="msg-container" />
+                <VBox fx:id="messagesContainer" spacing="10" styleClass="messages-container" />
             </content>
         </ScrollPane>
 
-        <!-- Thanh nhập -->
+        <!-- Input area -->
         <HBox alignment="CENTER_LEFT" spacing="6" styleClass="input-bar">
-
             <Button fx:id="btnAttachFile" onAction="#onAttachFile" styleClass="icon-btn">
                 <graphic>
                     <ImageView fitWidth="20" preserveRatio="true">
@@ -65,29 +108,10 @@
                     </ImageView>
                 </graphic>
             </Button>
-            <TextField fx:id="txtMessage" promptText="Nhập tin nhắn…" HBox.hgrow="ALWAYS" />
+
+            <TextField fx:id="txtMessage" promptText="Nhập tin nhắn…" HBox.hgrow="ALWAYS" styleClass="message-input"/>
 
             <Button fx:id="btnSend" styleClass="send-btn" text="Gửi" onAction="#onSend" />
         </HBox>
     </VBox>
-
-    <!-- ======= PANE 1: Online / Nhóm ======= -->
-    <TabPane prefWidth="260" tabClosingPolicy="UNAVAILABLE">
-
-        <!-- Online -->
-        <Tab text="Online">
-            <VBox spacing="6">
-                <TextField fx:id="searchField" promptText="Tìm kiếm…" />
-                <ListView fx:id="listOnlineUsers" VBox.vgrow="ALWAYS" />
-            </VBox>
-        </Tab>
-
-        <!-- Nhóm -->
-        <Tab text="Nhóm">
-            <VBox spacing="6">
-                <Button fx:id="btnCreateGroup" prefHeight="30.0" prefWidth="123.0" styleClass="create-btn" text="Tạo nhóm" onAction="#onCreateGroup" />
-                <ListView fx:id="listGroups" VBox.vgrow="ALWAYS" />
-            </VBox>
-        </Tab>
-    </TabPane>
 </SplitPane>

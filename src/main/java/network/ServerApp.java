@@ -10,6 +10,7 @@ import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
+import app.ServiceLocator;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -47,10 +48,17 @@ public class ServerApp {
     private Conversation globalConv;
 
     public ServerApp() {
-        // Constructor mặc định
+        // Khởi tạo ServiceLocator nếu chưa được khởi tạo
+        if (ServiceLocator.userService() == null) {
+            ServiceLocator.init(true);
+        }
     }
 
     public ServerApp(int port) throws IOException {
+        // Khởi tạo ServiceLocator nếu chưa được khởi tạo
+        if (ServiceLocator.userService() == null) {
+            ServiceLocator.init(true);
+        }
         this.server = new ServerSocket(port);
     }
 
@@ -64,6 +72,12 @@ public class ServerApp {
             ctx = new AnnotationConfigApplicationContext(app.config.AppConfig.class);
             groupSvc = ctx.getBean(GroupMessageService.class);
             groupSvc.setServer(this);           // <─ truyền chính ServerApp hiện tại
+
+            // Khởi tạo các service cần thiết
+            if (ServiceLocator.userService() == null) {
+                System.out.println("[ERROR] UserService chưa được khởi tạo!");
+                return;
+            }
 
             if (server == null) {
                 server = new ServerSocket(port);
@@ -155,7 +169,13 @@ public class ServerApp {
                     switch (pkt.type()) {
                         case LOGIN -> {
                             // handle login
-                            this.username = pkt.header(); // header = "username"
+                            String loginUsername = pkt.header(); // header = "username"
+                            if (loginUsername == null || loginUsername.isBlank()) {
+                                System.out.println("Lỗi: username không hợp lệ khi login");
+                                sendPacket(new Packet(PacketType.ACK, "LOGIN_FAIL: Invalid username", null));
+                                break;
+                            }
+                            this.username = loginUsername;
                             System.out.println("User login: " + username);
 
                             // Ở đây giả định user đã tồn tại trong DB do client đã register.
@@ -175,6 +195,10 @@ public class ServerApp {
                         }
                         case MSG -> {
                             // Nhận tin MSG (chat chung)
+                            if (username == null) {
+                                System.out.println("Lỗi: username là null khi xử lý MSG");
+                                break;
+                            }
                             String from = username;
                             String txt = new String(pkt.payload());
                             System.out.println("MSG from " + from + ": " + txt);
@@ -435,12 +459,78 @@ public class ServerApp {
                             sendPacket(new Packet(PacketType.AVATAR_DATA, targetUser, data)); // chỉ gửi requester
                         }
 
+                        case FRIEND_REQUEST -> {
+                            // header: from->to
+                            System.out.println("[DEBUG] Nhận FRIEND_REQUEST packet");
+                            String[] arr = pkt.header().split("->");
+                            if (arr.length != 2) {
+                                System.out.println("[ERROR] FRIEND_REQUEST header không hợp lệ: " + pkt.header());
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL: Invalid header format", null));
+                                break;
+                            }
+                            String from = arr[0], to = arr[1];
+                            System.out.println("[DEBUG] Friend request từ " + from + " đến " + to);
 
+                            User fromUser = ServiceLocator.userService().getUser(from);
+                            if (fromUser == null) {
+                                System.out.println("[ERROR] Không tìm thấy user gửi: " + from);
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL: Sender not found", null));
+                                break;
+                            }
 
+                            User toUser = ServiceLocator.userService().getUser(to);
+                            if (toUser == null) {
+                                System.out.println("[ERROR] Không tìm thấy user nhận: " + to);
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL: Receiver not found", null));
+                                break;
+                            }
 
-
-
-
+                            try {
+                                System.out.println("[DEBUG] Gọi friendship.sendFriendRequest");
+                                ServiceLocator.friendship().sendFriendRequest(fromUser, toUser);
+                                System.out.println("[DEBUG] Tạo notification cho user nhận");
+                                ServiceLocator.notification().createNotification(toUser, "FRIEND_REQUEST", from);
+                                System.out.println("[DEBUG] Gửi ACK thành công");
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_OK", null));
+                            } catch (Exception e) {
+                                System.out.println("[ERROR] Lỗi khi xử lý friend request: " + e.getMessage());
+                                e.printStackTrace();
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL: " + e.getMessage(), null));
+                            }
+                        }
+                        case FRIEND_ACCEPT -> {
+                            String[] arr = pkt.header().split("->");
+                            String from = arr[0], to = arr[1];
+                            User fromUser = ServiceLocator.userService().getUser(from);
+                            User toUser = ServiceLocator.userService().getUser(to);
+                            try {
+                                ServiceLocator.friendship().acceptFriendRequest(fromUser, toUser);
+                                // Tạo notification cho user gửi
+                                ServiceLocator.notification().createNotification(toUser, "FRIEND_ACCEPT", from);
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_ACCEPT_OK", null));
+                            } catch (Exception e) {
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_ACCEPT_FAIL: " + e.getMessage(), null));
+                            }
+                        }
+                        case FRIEND_REJECT -> {
+                            String[] arr = pkt.header().split("->");
+                            String from = arr[0], to = arr[1];
+                            User fromUser = ServiceLocator.userService().getUser(from);
+                            User toUser = ServiceLocator.userService().getUser(to);
+                            try {
+                                ServiceLocator.friendship().rejectFriendRequest(fromUser, toUser);
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REJECT_OK", null));
+                            } catch (Exception e) {
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REJECT_FAIL: " + e.getMessage(), null));
+                            }
+                        }
+                        case FRIEND_PENDING_LIST -> {
+                            String username = pkt.header();
+                            User user = ServiceLocator.userService().getUser(username);
+                            var pending = ServiceLocator.friendship().getPendingRequests(user);
+                            String json = new Gson().toJson(pending);
+                            sendPacket(new Packet(PacketType.FRIEND_PENDING_LIST, username, json.getBytes()));
+                        }
 
                         default -> {}
                     }
@@ -462,14 +552,24 @@ public class ServerApp {
         }
 
         private void sendConvList(String username){
-            List<Conversation> convs = conversationDAO.findAllOfUser(username);
-            System.out.println("Gửi CONV_LIST cho " + username + ": " + convs);
-            List<Map<String,Object>> dto = new ArrayList<>();
-            for(Conversation c : convs){
-                dto.add(Map.of("id", c.getId(), "name", c.getName(), "type", c.getType()));
+            try {
+                if (ServiceLocator.userService() == null) {
+                    System.out.println("[ERROR] UserService là null khi gửi CONV_LIST cho " + username);
+                    return;
+                }
+
+                List<Conversation> convs = conversationDAO.findAllOfUser(username);
+                System.out.println("[DEBUG] Gửi CONV_LIST cho " + username + ": " + convs);
+                List<Map<String,Object>> dto = new ArrayList<>();
+                for(Conversation c : convs){
+                    dto.add(Map.of("id", c.getId(), "name", c.getName(), "type", c.getType()));
+                }
+                String json = new Gson().toJson(dto);
+                sendToUser(username, new Packet(PacketType.CONV_LIST, "LIST", json.getBytes()));
+            } catch (Exception e) {
+                System.out.println("[ERROR] Lỗi khi gửi CONV_LIST cho " + username + ": " + e.getMessage());
+                e.printStackTrace();
             }
-            String json = new Gson().toJson(dto);
-            sendToUser(username, new Packet(PacketType.CONV_LIST, "LIST", json.getBytes()));
         }
 
 

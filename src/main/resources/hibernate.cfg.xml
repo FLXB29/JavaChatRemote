@@ -32,5 +32,8 @@
         <mapping class="app.model.Conversation"/>
         <mapping class="app.model.FileAttachment"/>
         <mapping class="app.model.Membership"/>
+        <mapping class="app.model.Friendship"/>
+        <mapping class="app.model.MessageReceipt"/>
+        <mapping class="app.model.Notification"/>
     </session-factory>
 </hibernate-configuration>

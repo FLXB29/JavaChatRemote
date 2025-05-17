@@ -11,6 +11,9 @@ import org.hibernate.Session;
 import java.util.List;
 import java.io.File;
 import app.model.FileAttachment;
+import java.util.ArrayList;
+import app.controller.ChatController.RecentChatCellData;
+import app.ServiceLocator;
 
 public class MessageService {
     private final MessageDAO messageDAO;
@@ -59,5 +62,43 @@ public class MessageService {
                     .setParameter("cid", convId)
                     .list();
         }
+    }
+
+    public List<Message> getMessagesWithUser(String userA, String userB) {
+        // Giả sử có hàm getAllMessages() trả về tất cả message
+        List<Message> all = getAllMessages();
+        List<Message> result = new ArrayList<>();
+        for (Message m : all) {
+            String sender = m.getSender().getUsername();
+            String receiver = m.getConversation().getName(); // Giả sử name là username bên kia
+            if ((sender.equals(userA) && receiver.equals(userB)) ||
+                (sender.equals(userB) && receiver.equals(userA))) {
+                result.add(m);
+            }
+        }
+        return result;
+    }
+
+    public List<Message> getAllMessages() {
+        return messageDAO.findAll();
+    }
+
+    public List<RecentChatCellData> getRecentChats(User user) {
+        // Lấy tất cả conversation của user
+        List<Conversation> convs = ServiceLocator.conversationDAO().findAllOfUser(user.getUsername());
+        List<RecentChatCellData> result = new ArrayList<>();
+        for (Conversation c : convs) {
+            List<Message> msgs = getMessagesByConversation(c.getId());
+            Message lastMsg = msgs.isEmpty() ? null : msgs.get(msgs.size() - 1);
+            String lastMessage = lastMsg != null ? lastMsg.getContent() : "";
+            String time = lastMsg != null ? lastMsg.getCreatedAt().toLocalTime().toString() : "";
+            String chatName = c.getType().equals("PRIVATE") ? c.getName() : c.getName();
+            String avatarPath = null; // Có thể lấy avatar nhóm hoặc bạn bè nếu cần
+            int unread = 0; // Có thể lấy từ MessageReceiptService nếu muốn
+            result.add(new RecentChatCellData(chatName, lastMessage, time, avatarPath, unread));
+        }
+        // Sắp xếp theo lastMsg time desc
+        result.sort((a, b) -> b.time.compareTo(a.time));
+        return result;
     }
 }
