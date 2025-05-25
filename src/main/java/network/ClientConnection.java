@@ -1,5 +1,6 @@
 package network;
 
+import app.ServiceLocator;
 import app.model.User;
 import app.util.Config;
 import javafx.application.Platform;
@@ -43,6 +44,9 @@ public class ClientConnection {
 
     private Consumer<String> onHistoryReceived;
 
+    private FriendRequestCallback onFriendRequestReceived;
+
+
 
     // Callback khi nhận private message
     private BiConsumer<String, String> onPrivateMsgReceived;
@@ -65,6 +69,10 @@ public class ClientConnection {
 
     private Runnable onLoginSuccess;             // đặt cạnh các callback khác
     public  void setOnLoginSuccess(Runnable r){ this.onLoginSuccess = r; }
+
+
+    private BiConsumer<String, String> onFriendRequestAccepted;
+    private BiConsumer<String, String> onFriendRequestRejected;
 
 
     /* Callback khi nhận danh sách lời mời (JSON hoặc List<Friendship>) */
@@ -95,6 +103,17 @@ public class ClientConnection {
     public void setOnPendingListReceived(Consumer<String> cb){
         this.onPendingListReceived = cb;
     }
+
+
+
+    public void setOnFriendRequestAccepted(BiConsumer<String, String> callback) {
+        this.onFriendRequestAccepted = callback;
+    }
+
+    public void setOnFriendRequestRejected(BiConsumer<String, String> callback) {
+        this.onFriendRequestRejected = callback;
+    }
+
 
     public void connect() {
         try {
@@ -144,10 +163,31 @@ public class ClientConnection {
 
     // Chat riêng
     public void sendPrivate(String toUser, String content) {
-        // PM: header = toUser, payload = content
-        sendPacket(new Packet(PacketType.PM, toUser, content.getBytes()));
-    }
+        if (toUser == null || content == null) {
+            System.out.println("[ERROR] Invalid parameters for sendPrivate");
+            return;
+        }
 
+        try {
+            // First ensure the conversation exists
+            checkPrivateConversation(toUser);
+
+            // Then send the message with a small delay to make sure the conversation exists
+            new Thread(() -> {
+                try {
+                    // Small delay to ensure conversation is created
+                    Thread.sleep(200);
+                    sendPacket(new Packet(PacketType.PM, toUser, content.getBytes()));
+                    System.out.println("[DEBUG] Private message sent to " + toUser);
+                } catch (Exception e) {
+                    System.out.println("[ERROR] Failed to send private message: " + e.getMessage());
+                }
+            }).start();
+        } catch (Exception e) {
+            System.out.println("[ERROR] Failed to prepare private message: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
     // Trong ClientConnection
     public void sendFile(long conversationId, String fileName, byte[] data) {
         // header format: "convId:fileName"
@@ -155,72 +195,96 @@ public class ClientConnection {
         sendPacket(new Packet(PacketType.FILE, header, data));
     }
     private void sendPacket(Packet p) {
+        if (out == null) {
+            throw new RuntimeException("Connection not initialized");
+        }
+
         try {
             System.out.println("[SEND] " + p.type() + " header=" + p.header());
-
             out.writeObject(p);
             out.flush();
         } catch (IOException e) {
-            e.printStackTrace();
+            System.out.println("[ERROR] Failed to send packet: " + e.getMessage());
+            throw new RuntimeException("Failed to send packet", e);
         }
     }
 
     private void listen() {
         try {
-            while(true) {
+            while (true) {
                 Packet p = (Packet) in.readObject();
-                switch(p.type()) {
+
+                // Debug output for tracking received packets
+                System.out.println("[RECV] " + p.type() + " header=" + p.header());
+
+                switch (p.type()) {
                     case MSG -> {
-                        // p.header() = from, p.payload() = text
                         String from = p.header();
                         String content = new String(p.payload());
-                        if(onTextReceived != null) {
+                        if (onTextReceived != null) {
                             onTextReceived.accept(from, content);
                         }
                     }
+
                     case FILE -> {
-                        // p.header() = from + ":" + fileName
                         String[] parts = p.header().split(":", 2);
                         String from = parts[0];
                         String filename = parts[1];
-                        if(onFileReceived != null) {
+                        if (onFileReceived != null) {
                             onFileReceived.accept(from, filename, p.payload());
                         }
                     }
+
                     case ACK -> {
                         String header = p.header();
                         System.out.println("[DEBUG] Nhận ACK: " + header);
 
                         if ("LOGIN_OK".equals(header)) {
-                            /* ① Hỏi server danh sách lời mời */
-                            requestPendingFriendRequests(currentUser);
+                            if (currentUser != null) {
+                                // Request pending friend requests after login
+                                requestPendingFriendRequests(currentUser);
 
-                            /* ② báo cho UI (nếu cần) */
-                            if(onLoginSuccess != null)
+                                // Request all avatars for online users
+                                requestUserList();
+                            }
+
+                            if (onLoginSuccess != null) {
                                 Platform.runLater(onLoginSuccess);
-                        }
-
-                        if (header.startsWith("FRIEND_REQUEST_")) {
-                            if (header.contains("FAIL")) {
-                                System.out.println("[ERROR] Friend request thất bại: " + header);
-                            } else {
-                                System.out.println("[DEBUG] Friend request thành công");
                             }
                         }
                     }
+
                     case USRLIST -> {
-                        // p.header() = "ONLINE_USERS"
-                        // p.payload() = chuỗi "alice,bob,nam"
                         if (onUserListReceived != null) {
                             String userStr = new String(p.payload());
-                            System.out.println("[DEBUG] USRLIST payload=" + userStr);   // <── thêm
+                            System.out.println("[DEBUG] USRLIST payload=" + userStr);
 
                             String[] arr = userStr.split(",");
                             onUserListReceived.accept(arr);
+
+                            // Request avatars for all online users
+                            for (String username : arr) {
+                                if (username != null && !username.isBlank() && !username.equals(currentUser)) {
+                                    requestAvatar(username);
+                                }
+                            }
                         }
                     }
+
+                    case AVATAR_DATA -> {
+                        String username = p.header();
+                        byte[] data = p.payload();
+
+                        // Process avatar data
+                        handleNewAvatar(username, data);
+
+                        // Notify UI through callback
+                        if (onAvatarUpdated != null) {
+                            onAvatarUpdated.accept(username, data);
+                        }
+                    }
+
                     case PM -> {
-                        // p.header() = fromUser, p.payload() = content
                         String from = p.header();
                         String content = new String(p.payload());
                         if (onPrivateMsgReceived != null) {
@@ -229,102 +293,108 @@ public class ClientConnection {
                     }
 
                     case CONV_LIST -> {
-                        if(onConvList!=null) onConvList.accept(new String(p.payload()));
-                    }
-                    case HISTORY -> {
-                        String header = p.header();
-                        String json   = new String(p.payload());
-
-                        try {                               // header = convId
-                            long cid = Long.parseLong(header);
-                            if(onHistory != null) onHistory.accept(cid, json);
-                            // xem HISTORY như Join‑OK
-                            if(onConvJoined != null) onConvJoined.onJoined(cid);   // ← thêm dòng này
-                        } catch (NumberFormatException ex) { // phòng server cũ
-                            if(onHistoryReceived != null) onHistoryReceived.accept(json);
+                        if (onConvList != null) {
+                            onConvList.accept(new String(p.payload()));
                         }
                     }
 
+                    case HISTORY -> {
+                        String header = p.header();
+                        String json = new String(p.payload());
 
+                        try {
+                            long cid = Long.parseLong(header);
+                            if (onHistory != null) onHistory.accept(cid, json);
+                            if (onConvJoined != null) onConvJoined.onJoined(cid);
+                        } catch (NumberFormatException ex) {
+                            if (onHistoryReceived != null) onHistoryReceived.accept(json);
+                        }
+                    }
 
                     case GROUP_MSG -> {
                         long convId = Long.parseLong(p.header());
-                        // payload format: "from|content"  (đơn giản)
-                        String[] parts = new String(p.payload()).split("\\|",2);
-                        if(onGroupMsg != null){
+                        String[] parts = new String(p.payload()).split("\\|", 2);
+                        if (onGroupMsg != null && parts.length == 2) {
                             onGroupMsg.accept(convId, parts[0], parts[1]);
                         }
                     }
+
                     case FILE_META -> {
-                        // payload: from|fileName|size|fileId|flag
                         String[] pa = new String(p.payload()).split("\\|");
-                        if(onFileMeta != null && pa.length >= 4){
-                            /* gộp fileId và flag lại thành 1 chuỗi "id|T" hoặc "id|N" */
-                            String idFlag = (pa.length >= 5) ? pa[3] + "|" + pa[4]  // server mới
-                                    : pa[3];              // phòng server cũ
-                            onFileMeta.accept(pa[0],            // from
-                                    pa[1],            // fileName
-                                    Long.parseLong(pa[2]),   // size
-                                    idFlag);         // "id|flag"
+                        if (onFileMeta != null && pa.length >= 4) {
+                            String idFlag = (pa.length >= 5) ? pa[3] + "|" + pa[4] : pa[3];
+                            onFileMeta.accept(pa[0], pa[1], Long.parseLong(pa[2]), idFlag);
                         }
                     }
 
-
                     case FILE_CHUNK -> {
                         String[] h = p.header().split(":");
-                        if(onFileChunk != null)
-                            onFileChunk.accept(h[0], Integer.parseInt(h[1]),
-                                    "1".equals(h[2]), p.payload());
+                        if (onFileChunk != null && h.length >= 3) {
+                            onFileChunk.accept(h[0], Integer.parseInt(h[1]), "1".equals(h[2]), p.payload());
+                        }
                     }
+
                     case FILE_THUMB -> {
-                        String id   = p.header();
-                        if(onFileThumb!=null)
+                        String id = p.header();
+                        if (onFileThumb != null) {
                             onFileThumb.accept(id, p.payload());
+                        }
                     }
 
-                    case AVATAR_DATA -> {
-                        String username = p.header();
-                        byte[] data = p.payload();
+                    case FRIEND_REQUEST_NOTIFICATION, FRIEND_REQUEST -> {
+                        String fromUser = p.header();
+                        if (onFriendRequestReceived != null) {
+                            onFriendRequestReceived.onFriendRequest(fromUser);
+                        }
+                    }
 
-                        // Lưu avatar vào cache
-                        Path cacheDir = Paths.get("avatar_cache");
-                        if(!Files.exists(cacheDir)) Files.createDirectories(cacheDir);
+                    case FRIEND_REQUEST_ACCEPTED -> {
+                        String[] parts = p.header().split("->");
+                        if (parts.length == 2 && onFriendRequestAccepted != null) {
+                            onFriendRequestAccepted.accept(parts[0], parts[1]);
+                        }
+                    }
 
-                        Path file = cacheDir.resolve(username + ".png");
-                        Files.write(file, data);
-
-                        // Thông báo cho UI cập nhật qua callback
-                        if(onAvatarUpdated != null) {
-                            onAvatarUpdated.accept(username, data);
+                    case FRIEND_REQUEST_REJECTED -> {
+                        String[] parts = p.header().split("->");
+                        if (parts.length == 2 && onFriendRequestRejected != null) {
+                            onFriendRequestRejected.accept(parts[0], parts[1]);
                         }
                     }
 
                     case FRIEND_PENDING_LIST -> {
                         if (onPendingListReceived != null) {
-                            String json = new String(p.payload());   // server gửi JSON list
+                            String json = new String(p.payload());
                             onPendingListReceived.accept(json);
                         }
                     }
 
-
-                    default -> {}
+                    default -> {
+                        System.out.println("[WARN] Unhandled packet type: " + p.type());
+                    }
                 }
             }
         } catch (Exception e) {
             System.out.println("Disconnected from server: " + e.getMessage());
+            e.printStackTrace();
             handleConnectionError();
         }
     }
-
     public void requestHistory(String fromUser, String target) {
         if (fromUser == null || target == null) {
-            System.out.println("Lỗi: fromUser hoặc target là null (fromUser=" + fromUser + ", target=" + target + ")");
+            System.out.println("[ERROR] Cannot request history: null parameters");
             return;
         }
-        String header = fromUser + "->" + target;
-        System.out.println("Gửi GET_HISTORY: " + header);
-        Packet req = new Packet(PacketType.GET_HISTORY, header, null);
-        sendPacket(req);
+
+        try {
+            String header = fromUser + "->" + target;
+            System.out.println("[DEBUG] Requesting history: " + header);
+            Packet req = new Packet(PacketType.GET_HISTORY, header, null);
+            sendPacket(req);
+        } catch (Exception e) {
+            System.out.println("[ERROR] Failed to request history: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
     public void requestThumb(String id){
         sendPacket(new Packet(PacketType.GET_THUMB, id, null));
@@ -341,14 +411,49 @@ public class ClientConnection {
 
     /* gửi avatar mới */
     public void uploadAvatar(File f) throws IOException {
-        byte[] data = Files.readAllBytes(f.toPath());
-        sendPacket(new Packet(PacketType.AVATAR_UPLOAD, f.getName(), data));
-    }
+        if (f == null || !f.exists()) {
+            throw new IOException("Avatar file does not exist");
+        }
 
+        System.out.println("[DEBUG] Uploading avatar: " + f.getAbsolutePath());
+        byte[] data = Files.readAllBytes(f.toPath());
+
+        // Send to server
+        sendPacket(new Packet(PacketType.AVATAR_UPLOAD, f.getName(), data));
+
+        // Broadcast notification to all clients that avatar has changed
+        // (this is actually handled by the server automatically)
+
+        // Also update local avatar cache immediately
+        if (currentUser != null) {
+            Path cacheDir = Paths.get("avatar_cache");
+            if (!Files.exists(cacheDir)) {
+                Files.createDirectories(cacheDir);
+            }
+
+            Path avatarFile = cacheDir.resolve(currentUser + ".png");
+            Files.write(avatarFile, data);
+
+            System.out.println("[DEBUG] Updated local avatar cache for current user");
+
+            // Update the User object
+            User user = ServiceLocator.userService().getUser(currentUser);
+            if (user != null) {
+                user.setAvatarPath(avatarFile.toString());
+                user.setUseDefaultAvatar(false);
+            }
+        }
+    }
     /* xin avatar của 1 user khác */
-    public void requestAvatar(String username){
+    public void requestAvatar(String username) {
+        if (username == null || username.isBlank()) {
+            return;
+        }
+
+        System.out.println("[DEBUG] Requesting avatar for: " + username);
         sendPacket(new Packet(PacketType.GET_AVATAR, username, null));
     }
+
     // Client yêu cầu server stream 1 file
     public void requestFile(String id){
         sendPacket(new Packet(PacketType.GET_FILE, id, null));
@@ -421,47 +526,62 @@ public class ClientConnection {
     public void setOnAvatarUpdated(BiConsumer<String, byte[]> callback) {
         this.onAvatarUpdated = callback;
     }
-
+    public void setOnFriendRequestReceived(FriendRequestCallback callback) {
+        this.onFriendRequestReceived = callback;
+    }
     // Phương thức để yêu cầu avatar của tất cả người dùng online
     public void requestAllAvatars() {
-        if (onlineUsers != null) {
-            for (String username : onlineUsers.keySet()) {
-                if (!username.equals(currentUser)) {
-                    requestAvatar(username);
-                }
-            }
+        System.out.println("[DEBUG] Requesting avatars for all online users");
+
+        // Request user list first
+        requestUserList();
+
+        // Request avatar for current user
+        if (currentUser != null) {
+            requestAvatar(currentUser);
         }
     }
 
     // Phương thức để xử lý khi nhận được avatar mới
     private void handleNewAvatar(String username, byte[] data) {
         try {
+            System.out.println("[DEBUG] Processing avatar for " + username + ", size: " + data.length + " bytes");
+
+            // Create avatar cache directory if it doesn't exist
             Path cacheDir = Paths.get("avatar_cache");
             if (!Files.exists(cacheDir)) {
                 Files.createDirectories(cacheDir);
             }
 
+            // Save avatar file
             Path avatarFile = cacheDir.resolve(username + ".png");
             Files.write(avatarFile, data);
+            System.out.println("[DEBUG] Saved avatar for " + username + " to " + avatarFile);
 
-            Platform.runLater(() -> {
-                User user = onlineUsers.get(username);
-                if (user != null) {
-                    user.setAvatarPath(avatarFile.toString());
-                    user.setUseDefaultAvatar(false);
-                    if (listOnlineUsers != null) {
-                        listOnlineUsers.refresh();
-                    }
+            // Update user information
+            User user = ServiceLocator.userService().getUser(username);
+            if (user != null) {
+                // Update avatar info in the User object
+                user.setAvatarPath(avatarFile.toString());
+                user.setUseDefaultAvatar(false);
+
+                // Update user in database
+                ServiceLocator.userService().updateAvatar(username, avatarFile.toFile());
+
+                // Update in our maps
+                if (onlineUsers.containsKey(username)) {
+                    onlineUsers.put(username, user);
                 }
-                if (username.equals(currentUser)) {
-                    updateUserAvatar();
-                }
-            });
-        } catch (IOException e) {
+
+                System.out.println("[DEBUG] Updated avatar for user: " + username);
+            } else {
+                System.out.println("[WARN] Cannot find user for avatar update: " + username);
+            }
+        } catch (Exception e) {
+            System.out.println("[ERROR] Failed to handle avatar: " + e.getMessage());
             e.printStackTrace();
         }
     }
-
     // Define TriConsumer
     @FunctionalInterface
     public interface TriConsumer<A,B,C> {
@@ -472,6 +592,10 @@ public class ClientConnection {
     @FunctionalInterface
     public interface ConsumerOfList {
         void accept(String[] users);
+    }
+    @FunctionalInterface
+    public interface FriendRequestCallback {
+        void onFriendRequest(String fromUser);
     }
 
     @FunctionalInterface
@@ -490,30 +614,83 @@ public class ClientConnection {
     public void sendFriendRequest(String from, String to) {
         if (from == null || to == null || from.isBlank() || to.isBlank()) {
             System.out.println("[ERROR] Invalid friend request parameters - from: " + from + ", to: " + to);
-            return;
+            throw new IllegalArgumentException("Invalid friend request parameters");
+        }
+
+        if (from.equals(to)) {
+            System.out.println("[ERROR] Cannot send friend request to yourself");
+            throw new IllegalArgumentException("Cannot send friend request to yourself");
         }
 
         System.out.println("[DEBUG] Sending friend request from " + from + " to " + to);
         String header = from + "->" + to;
+
         try {
             sendPacket(new Packet(PacketType.FRIEND_REQUEST, header, null));
             System.out.println("[DEBUG] Friend request packet sent successfully");
         } catch (Exception e) {
             System.out.println("[ERROR] Failed to send friend request packet: " + e.getMessage());
+            throw new RuntimeException("Failed to send friend request", e);
+        }
+    }
+    public void acceptFriendRequest(String from, String to) {
+        if (from == null || to == null || from.isBlank() || to.isBlank()) {
+            throw new IllegalArgumentException("Invalid accept request parameters");
+        }
+
+        String header = from + "->" + to;
+        System.out.println("[DEBUG] Accepting friend request: " + header);
+
+        try {
+            sendPacket(new Packet(PacketType.FRIEND_ACCEPT, header, null));
+            System.out.println("[DEBUG] Friend accept packet sent successfully");
+        } catch (Exception e) {
+            System.out.println("[ERROR] Failed to send friend accept packet: " + e.getMessage());
+            throw new RuntimeException("Failed to accept friend request", e);
+        }
+    }
+    public void rejectFriendRequest(String from, String to) {
+        if (from == null || to == null || from.isBlank() || to.isBlank()) {
+            throw new IllegalArgumentException("Invalid reject request parameters");
+        }
+
+        String header = from + "->" + to;
+        System.out.println("[DEBUG] Rejecting friend request: " + header);
+
+        try {
+            sendPacket(new Packet(PacketType.FRIEND_REJECT, header, null));
+            System.out.println("[DEBUG] Friend reject packet sent successfully");
+        } catch (Exception e) {
+            System.out.println("[ERROR] Failed to send friend reject packet: " + e.getMessage());
+            throw new RuntimeException("Failed to reject friend request", e);
+        }
+    }
+    public void requestPendingFriendRequests(String username) {
+        if (username == null || username.isBlank()) {
+            System.out.println("[ERROR] Invalid username for pending requests");
+            return;
+        }
+
+        System.out.println("[DEBUG] Requesting pending friend requests for: " + username);
+        sendPacket(new Packet(PacketType.FRIEND_PENDING_LIST, username, null));
+    }
+    public void checkPrivateConversation(String otherUser) {
+        if (otherUser == null || currentUser == null) {
+            System.out.println("[ERROR] Cannot check conversation: null username");
+            return;
+        }
+
+        try {
+            // Use the history request to implicitly create the conversation if it doesn't exist
+            String header = currentUser + "->" + otherUser;
+            System.out.println("[DEBUG] Ensuring conversation exists: " + header);
+            Packet req = new Packet(PacketType.GET_HISTORY, header, null);
+            sendPacket(req);
+        } catch (Exception e) {
+            System.out.println("[ERROR] Failed to check private conversation: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
-    public void acceptFriendRequest(String from, String to) {
-        String header = from + "->" + to;
-        sendPacket(new Packet(PacketType.FRIEND_ACCEPT, header, null));
-    }
-    public void rejectFriendRequest(String from, String to) {
-        String header = from + "->" + to;
-        sendPacket(new Packet(PacketType.FRIEND_REJECT, header, null));
-    }
-    public void requestPendingFriendRequests(String username) {
-        sendPacket(new Packet(PacketType.FRIEND_PENDING_LIST, username, null));
-    }
 }
 

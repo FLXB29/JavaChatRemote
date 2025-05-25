@@ -5,7 +5,11 @@ import app.dao.*;
 import app.model.*;
 import app.service.GroupMessageService;
 import app.util.Config;
+import app.util.DatabaseEncryptionUtil;
+import app.util.DatabaseKeyManager;
 import app.util.HibernateUtil;
+import com.google.gson.ExclusionStrategy;
+import com.google.gson.FieldAttributes;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import net.coobird.thumbnailator.Thumbnails;
@@ -26,6 +30,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
 
 /**
  * ServerApp: Lắng nghe client, xử lý login / gửi tin nhắn,
@@ -77,6 +82,11 @@ public class ServerApp {
             if (ServiceLocator.userService() == null) {
                 System.out.println("[ERROR] UserService chưa được khởi tạo!");
                 return;
+            }
+            // Khởi tạo DatabaseKeyManager
+            if (!DatabaseKeyManager.isInitialized()) {
+                DatabaseKeyManager.initialize();
+                System.out.println("[INFO] Đã khởi tạo DatabaseKeyManager");
             }
 
             if (server == null) {
@@ -168,27 +178,27 @@ public class ServerApp {
                     Packet pkt = (Packet) in.readObject();
                     switch (pkt.type()) {
                         case LOGIN -> {
-                            // handle login
-                            String loginUsername = pkt.header(); // header = "username"
+                            String loginUsername = pkt.header();
                             if (loginUsername == null || loginUsername.isBlank()) {
                                 System.out.println("Lỗi: username không hợp lệ khi login");
                                 sendPacket(new Packet(PacketType.ACK, "LOGIN_FAIL: Invalid username", null));
                                 break;
                             }
+
                             this.username = loginUsername;
                             System.out.println("User login: " + username);
-
-                            // Ở đây giả định user đã tồn tại trong DB do client đã register.
-                            // Nếu cần, có thể kiểm tra/truy vấn DB:
-                            //   User u = userDAO.findByUsername(username);
-                            //   if(u == null) { ... } else {...}
 
                             // Thêm vào map clients
                             clients.put(username, this);
 
                             // Gửi phản hồi "ACK"
                             sendPacket(new Packet(PacketType.ACK, "LOGIN_OK", null));
-                            sendConvList(username); // <── thêm dòng này
+
+                            // *** THÊM: Auto-send pending friend requests ***
+                            sendPendingFriendRequestsOnLogin(username);
+
+                            // Gửi conversation list
+                            sendConvList(username);
 
                             // Gửi/broadcast danh sách user online
                             broadcastUserList();
@@ -460,76 +470,242 @@ public class ServerApp {
                         }
 
                         case FRIEND_REQUEST -> {
-                            // header: from->to
-                            System.out.println("[DEBUG] Nhận FRIEND_REQUEST packet");
                             String[] arr = pkt.header().split("->");
                             if (arr.length != 2) {
                                 System.out.println("[ERROR] FRIEND_REQUEST header không hợp lệ: " + pkt.header());
-                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL: Invalid header format", null));
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL_INVALID_FORMAT", null));
                                 break;
                             }
-                            String from = arr[0], to = arr[1];
+
+                            String from = arr[0].trim();
+                            String to = arr[1].trim();
                             System.out.println("[DEBUG] Friend request từ " + from + " đến " + to);
 
-                            User fromUser = ServiceLocator.userService().getUser(from);
-                            if (fromUser == null) {
-                                System.out.println("[ERROR] Không tìm thấy user gửi: " + from);
-                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL: Sender not found", null));
-                                break;
-                            }
-
-                            User toUser = ServiceLocator.userService().getUser(to);
-                            if (toUser == null) {
-                                System.out.println("[ERROR] Không tìm thấy user nhận: " + to);
-                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL: Receiver not found", null));
-                                break;
-                            }
-
                             try {
-                                System.out.println("[DEBUG] Gọi friendship.sendFriendRequest");
+                                // Validate users exist
+                                User fromUser = ServiceLocator.userService().getUser(from);
+                                User toUser = ServiceLocator.userService().getUser(to);
+
+                                if (fromUser == null) {
+                                    System.out.println("[ERROR] Không tìm thấy user gửi: " + from);
+                                    sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL_SENDER_NOT_FOUND", null));
+                                    break;
+                                }
+
+                                if (toUser == null) {
+                                    System.out.println("[ERROR] Không tìm thấy user nhận: " + to);
+                                    sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL_RECEIVER_NOT_FOUND", null));
+                                    break;
+                                }
+
+                                // Check if users are the same
+                                if (from.equals(to)) {
+                                    System.out.println("[ERROR] User không thể tự gửi friend request cho chính mình");
+                                    sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL_SELF_REQUEST", null));
+                                    break;
+                                }
+
+                                // Check existing friendship status
+                                Friendship.Status existingStatus = ServiceLocator.friendship()
+                                        .getFriendshipStatus(fromUser, toUser);
+
+                                if (existingStatus != null) {
+                                    String reason = switch(existingStatus) {
+                                        case PENDING -> "ALREADY_PENDING";
+                                        case ACCEPTED -> "ALREADY_FRIENDS";
+                                        case BLOCKED -> "BLOCKED";
+                                    };
+                                    sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL_" + reason, null));
+                                    break;
+                                }
+
+                                // Send friend request
                                 ServiceLocator.friendship().sendFriendRequest(fromUser, toUser);
-                                System.out.println("[DEBUG] Tạo notification cho user nhận");
+                                System.out.println("[DEBUG] Friend request đã được lưu vào database");
+
+                                // Create notification for receiver (cho cả online và offline)
                                 ServiceLocator.notification().createNotification(toUser, "FRIEND_REQUEST", from);
-                                System.out.println("[DEBUG] Gửi ACK thành công");
-                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_OK", null));
+                                System.out.println("[DEBUG] Notification đã được tạo cho " + to);
+
+                                // Send success ACK to sender
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_SUCCESS", null));
+
+                                // Send notification to receiver (nếu online)
+                                ClientHandler receiverHandler = clients.get(to);
+                                if (receiverHandler != null) {
+                                    receiverHandler.sendPacket(new Packet(
+                                            PacketType.FRIEND_REQUEST_NOTIFICATION,
+                                            from,
+                                            null
+                                    ));
+                                    System.out.println("[DEBUG] Real-time notification gửi tới " + to + " (online)");
+                                } else {
+                                    System.out.println("[DEBUG] User " + to + " offline, notification sẽ được gửi khi login");
+                                }
+
+                                // Log activity
+                                logFriendshipAction("FRIEND_REQUEST", from, to, true, "Success");
+
+                            } catch (IllegalArgumentException e) {
+                                System.out.println("[ERROR] Validation error: " + e.getMessage());
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL_VALIDATION_ERROR", null));
+                                logFriendshipAction("FRIEND_REQUEST", from, to, false, e.getMessage());
+                            } catch (IllegalStateException e) {
+                                System.out.println("[ERROR] State error: " + e.getMessage());
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL_STATE_ERROR", null));
+                                logFriendshipAction("FRIEND_REQUEST", from, to, false, e.getMessage());
                             } catch (Exception e) {
                                 System.out.println("[ERROR] Lỗi khi xử lý friend request: " + e.getMessage());
                                 e.printStackTrace();
-                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL: " + e.getMessage(), null));
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL_SERVER_ERROR", null));
+                                logFriendshipAction("FRIEND_REQUEST", from, to, false, "Server error: " + e.getMessage());
                             }
                         }
                         case FRIEND_ACCEPT -> {
                             String[] arr = pkt.header().split("->");
-                            String from = arr[0], to = arr[1];
-                            User fromUser = ServiceLocator.userService().getUser(from);
-                            User toUser = ServiceLocator.userService().getUser(to);
+                            if (arr.length != 2) {
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_ACCEPT_FAIL_INVALID_FORMAT", null));
+                                break;
+                            }
+
+                            String from = arr[0].trim();
+                            String to = arr[1].trim();
+                            System.out.println("[DEBUG] Accept friend request từ " + from + " bởi " + to);
+
                             try {
+                                User fromUser = ServiceLocator.userService().getUser(from);
+                                User toUser = ServiceLocator.userService().getUser(to);
+
+                                if (fromUser == null || toUser == null) {
+                                    sendPacket(new Packet(PacketType.ACK, "FRIEND_ACCEPT_FAIL_USER_NOT_FOUND", null));
+                                    break;
+                                }
+
+                                // Accept the friend request
                                 ServiceLocator.friendship().acceptFriendRequest(fromUser, toUser);
-                                // Tạo notification cho user gửi
-                                ServiceLocator.notification().createNotification(toUser, "FRIEND_ACCEPT", from);
-                                sendPacket(new Packet(PacketType.ACK, "FRIEND_ACCEPT_OK", null));
+
+                                // Create notification for the original sender (cho cả online và offline)
+                                ServiceLocator.notification().createNotification(fromUser, "FRIEND_ACCEPT", to);
+
+                                // Send success ACK to accepter
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_ACCEPT_SUCCESS", null));
+
+                                // Send notification to original sender (nếu online)
+                                ClientHandler senderHandler = clients.get(from);
+                                if (senderHandler != null) {
+                                    senderHandler.sendPacket(new Packet(
+                                            PacketType.FRIEND_REQUEST_ACCEPTED,
+                                            from + "->" + to,
+                                            null
+                                    ));
+                                    System.out.println("[DEBUG] Real-time accept notification gửi tới " + from + " (online)");
+                                } else {
+                                    System.out.println("[DEBUG] User " + from + " offline, accept notification sẽ được xử lý khi login");
+                                }
+
+                                logFriendshipAction("FRIEND_ACCEPT", from, to, true, "Success");
+                                System.out.println("[DEBUG] Friend request từ " + from + " đã được " + to + " chấp nhận");
+
+                            } catch (IllegalStateException e) {
+                                System.out.println("[ERROR] Không thể accept: " + e.getMessage());
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_ACCEPT_FAIL_INVALID_STATE", null));
+                                logFriendshipAction("FRIEND_ACCEPT", from, to, false, e.getMessage());
                             } catch (Exception e) {
-                                sendPacket(new Packet(PacketType.ACK, "FRIEND_ACCEPT_FAIL: " + e.getMessage(), null));
+                                System.out.println("[ERROR] Lỗi khi accept friend request: " + e.getMessage());
+                                e.printStackTrace();
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_ACCEPT_FAIL_SERVER_ERROR", null));
+                                logFriendshipAction("FRIEND_ACCEPT", from, to, false, "Server error: " + e.getMessage());
                             }
                         }
+
                         case FRIEND_REJECT -> {
                             String[] arr = pkt.header().split("->");
-                            String from = arr[0], to = arr[1];
-                            User fromUser = ServiceLocator.userService().getUser(from);
-                            User toUser = ServiceLocator.userService().getUser(to);
+                            if (arr.length != 2) {
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REJECT_FAIL_INVALID_FORMAT", null));
+                                break;
+                            }
+
+                            String from = arr[0].trim();
+                            String to = arr[1].trim();
+                            System.out.println("[DEBUG] Reject friend request từ " + from + " bởi " + to);
+
                             try {
+                                User fromUser = ServiceLocator.userService().getUser(from);
+                                User toUser = ServiceLocator.userService().getUser(to);
+
+                                if (fromUser == null || toUser == null) {
+                                    sendPacket(new Packet(PacketType.ACK, "FRIEND_REJECT_FAIL_USER_NOT_FOUND", null));
+                                    break;
+                                }
+
+                                // Reject the friend request
                                 ServiceLocator.friendship().rejectFriendRequest(fromUser, toUser);
-                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REJECT_OK", null));
+
+                                // Send success ACK to rejecter
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REJECT_SUCCESS", null));
+
+                                // Send notification to original sender (if online)
+                                ClientHandler senderHandler = clients.get(from);
+                                if (senderHandler != null) {
+                                    senderHandler.sendPacket(new Packet(
+                                            PacketType.FRIEND_REQUEST_REJECTED,
+                                            from + "->" + to,
+                                            null
+                                    ));
+                                    System.out.println("[DEBUG] Friend reject notification gửi tới " + from);
+                                }
+
+                                System.out.println("[DEBUG] Friend request từ " + from + " đã bị " + to + " từ chối");
+
+                            } catch (IllegalStateException e) {
+                                System.out.println("[ERROR] Không thể reject: " + e.getMessage());
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REJECT_FAIL_INVALID_STATE", null));
                             } catch (Exception e) {
-                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REJECT_FAIL: " + e.getMessage(), null));
+                                System.out.println("[ERROR] Lỗi khi reject friend request: " + e.getMessage());
+                                e.printStackTrace();
+                                sendPacket(new Packet(PacketType.ACK, "FRIEND_REJECT_FAIL_SERVER_ERROR", null));
                             }
                         }
                         case FRIEND_PENDING_LIST -> {
                             String username = pkt.header();
-                            User user = ServiceLocator.userService().getUser(username);
-                            var pending = ServiceLocator.friendship().getPendingRequests(user);
-                            String json = new Gson().toJson(pending);
-                            sendPacket(new Packet(PacketType.FRIEND_PENDING_LIST, username, json.getBytes()));
+                            System.out.println("[DEBUG] Yêu cầu danh sách pending friend requests cho: " + username);
+
+                            try {
+                                User user = ServiceLocator.userService().getUser(username);
+                                if (user == null) {
+                                    System.out.println("[ERROR] User không tồn tại: " + username);
+                                    break;
+                                }
+
+                                List<Friendship> pending = ServiceLocator.friendship().getPendingRequests(user);
+                                System.out.println("[DEBUG] Tìm thấy " + pending.size() + " pending requests cho " + username);
+
+                                // *** FIX: Sử dụng custom Gson với exclusion strategy ***
+                                Gson gson = new GsonBuilder()
+                                        .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+                                        .addSerializationExclusionStrategy(new ExclusionStrategy() {
+                                            @Override
+                                            public boolean shouldSkipField(FieldAttributes field) {
+                                                // Skip memberships field để tránh LazyInitializationException
+                                                return field.getName().equals("memberships");
+                                            }
+
+                                            @Override
+                                            public boolean shouldSkipClass(Class<?> clazz) {
+                                                return false;
+                                            }
+                                        })
+                                        .create();
+
+                                String json = gson.toJson(pending);
+
+                                sendPacket(new Packet(PacketType.FRIEND_PENDING_LIST, username, json.getBytes()));
+                                System.out.println("[DEBUG] Đã gửi danh sách pending requests cho " + username);
+
+                            } catch (Exception e) {
+                                System.out.println("[ERROR] Lỗi khi lấy pending friend requests: " + e.getMessage());
+                                e.printStackTrace();
+                            }
                         }
 
                         default -> {}
@@ -548,6 +724,16 @@ public class ServerApp {
                 try {
                     socket.close();
                 } catch (IOException ignored) {}
+            }
+        }
+
+        private void cleanupOldNotifications() {
+            try {
+                // Có thể implement logic để xóa notifications cũ hơn 30 ngày
+                // ServiceLocator.notification().cleanupOldNotifications(30);
+                System.out.println("[DEBUG] Cleanup old notifications completed");
+            } catch (Exception e) {
+                System.out.println("[ERROR] Error during notification cleanup: " + e.getMessage());
             }
         }
 
@@ -572,15 +758,94 @@ public class ServerApp {
             }
         }
 
+        private void sendNotificationToUser(String username, String type, String payload) {
+            ClientHandler handler = clients.get(username);
+            if (handler != null) {
+                try {
+                    Packet notification = new Packet(PacketType.valueOf(type), username, payload.getBytes());
+                    handler.sendPacket(notification);
+                    System.out.println("[DEBUG] Notification " + type + " gửi tới " + username);
+                } catch (Exception e) {
+                    System.out.println("[ERROR] Không thể gửi notification tới " + username + ": " + e.getMessage());
+                }
+            }
+        }
+        private void logFriendshipAction(String action, String from, String to, boolean success, String reason) {
+            String status = success ? "SUCCESS" : "FAILED";
+            String message = String.format("[FRIENDSHIP] %s: %s -> %s [%s]", action, from, to, status);
+            if (reason != null) {
+                message += " Reason: " + reason;
+            }
+            System.out.println(message);
+        }
+
+
+        private void sendPendingFriendRequestsOnLogin(String username) {
+            try {
+                System.out.println("[DEBUG] Auto-sending pending friend requests cho " + username);
+
+                User user = ServiceLocator.userService().getUser(username);
+                if (user == null) {
+                    System.out.println("[ERROR] User không tồn tại khi auto-send: " + username);
+                    return;
+                }
+
+                List<Friendship> pending = ServiceLocator.friendship().getPendingRequests(user);
+                System.out.println("[DEBUG] Tìm thấy " + pending.size() + " pending requests cho " + username);
+
+                if (!pending.isEmpty()) {
+                    // Convert to JSON với proper date handling
+                    Gson gson = new GsonBuilder()
+                            .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
+                            .create();
+                    String json = gson.toJson(pending);
+
+                    // Gửi packet với delay nhỏ để đảm bảo client đã setup callbacks
+                    new Thread(() -> {
+                        try {
+                            Thread.sleep(500); // Delay 500ms
+                            sendPacket(new Packet(PacketType.FRIEND_PENDING_LIST, username, json.getBytes()));
+                            System.out.println("[DEBUG] Đã auto-send " + pending.size() + " pending requests cho " + username);
+                        } catch (InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                        }
+                    }).start();
+                }
+
+            } catch (Exception e) {
+                System.out.println("[ERROR] Lỗi khi auto-send pending friend requests: " + e.getMessage());
+                e.printStackTrace();
+            }
+        }
+
+        private void createOfflineNotification(String username, String type, String payload) {
+            try {
+                User user = ServiceLocator.userService().getUser(username);
+                if (user != null) {
+                    ServiceLocator.notification().createNotification(user, type, payload);
+                    System.out.println("[DEBUG] Offline notification tạo cho " + username + ": " + type);
+                }
+            } catch (Exception e) {
+                System.out.println("[ERROR] Không thể tạo offline notification: " + e.getMessage());
+            }
+        }
 
         private String convertMessagesToJson(List<Message> messages) {
             // Tạo list DTO
             List<MessageDTO> dtoList = new ArrayList<>();
             for (Message m : messages) {
+                String content = m.getContent();
+
+                // Giải mã nếu cần
+                if (DatabaseEncryptionUtil.isEncrypted(content)) {
+                    content = DatabaseEncryptionUtil.decrypt(content);
+                    System.out.println("[DEBUG] Đã giải mã tin nhắn: " + m.getContent() + " -> " + content);
+                }
+
                 dtoList.add(new MessageDTO(
                         m.getSender().getUsername(),
-                        m.getContent(),
-                        m.getCreatedAt() // kiểu LocalDateTime
+                        content,
+                        m.getCreatedAt()
                 ));
             }
 
@@ -592,7 +857,6 @@ public class ServerApp {
             // Trả về chuỗi JSON
             return gson.toJson(dtoList);
         }
-
         private void addMembership(String username, Conversation g, String role){
             User u = userDAO.findByUsername(username);
             if(u == null) return;
@@ -608,15 +872,22 @@ public class ServerApp {
          * Lưu tin nhắn vào DB, gắn với conversation nhất định.
          */
         private void saveMessageToDb(String senderUsername, String content, Conversation conv) {
-            // Tìm user (đảm bảo chắc chắn user đã tồn tại do login/register)
+            // Tìm User từ username
             User sender = userDAO.findByUsername(senderUsername);
             if (sender == null) {
                 System.out.println("Không tìm thấy user " + senderUsername + " trong DB!");
-                return; // không lưu được
+                return;
+            }
+
+            // Mã hóa nội dung nếu bật tính năng mã hóa
+            String finalContent = content;
+            if (DatabaseKeyManager.isEncryptionEnabled() && content != null && !content.startsWith("[FILE]")) {
+                finalContent = DatabaseEncryptionUtil.encrypt(content);
+                System.out.println("[DEBUG] Đã mã hóa tin nhắn: " + content + " -> " + finalContent);
             }
 
             // Tạo message
-            Message msg = new Message(conv, sender, content, null);
+            Message msg = new Message(conv, sender, finalContent, null);
             messageDAO.save(msg);
         }
 
@@ -635,26 +906,129 @@ public class ServerApp {
 
     private Conversation findOrCreatePrivateConversation(String userA, String userB) {
         if (userA == null || userB == null || userA.isBlank() || userB.isBlank()) {
-            System.out.println("Lỗi: userA hoặc userB không hợp lệ (userA=" + userA + ", userB=" + userB + ")");
+            System.out.println("[ERROR] Invalid parameters for conversation: userA=" + userA + ", userB=" + userB);
             return null;
         }
-        String nameA = (userA.compareTo(userB) < 0) ? userA : userB;
-        String nameB = (userA.compareTo(userB) < 0) ? userB : userA;
-        String convName = nameA + "|" + nameB;
-        System.out.println("Tạo convName: " + convName);
 
         try {
-            Conversation c = conversationDAO.findByName(convName);
-            if (c == null) {
-                c = new Conversation("PRIVATE", convName);
-                conversationDAO.save(c);
-                System.out.println("Tạo conversation riêng: " + convName);
+            // Always put names in alphabetical order for consistency
+            String nameA = (userA.compareTo(userB) < 0) ? userA : userB;
+            String nameB = (userA.compareTo(userB) < 0) ? userB : userA;
+            String convName = nameA + "|" + nameB;
+
+            System.out.println("[DEBUG] Looking for private conversation: " + convName);
+
+            // Try to find existing conversation
+            Conversation conv = conversationDAO.findByName(convName);
+
+            // Create if it doesn't exist
+            if (conv == null) {
+                conv = new Conversation("PRIVATE", convName);
+                conversationDAO.save(conv);
+                System.out.println("[DEBUG] Created new private conversation: " + convName + " (ID: " + conv.getId() + ")");
+
+                // Add both users as members
+                User userObjA = userDAO.findByUsername(nameA);
+                User userObjB = userDAO.findByUsername(nameB);
+
+                if (userObjA != null && userObjB != null) {
+                    // Create memberships
+                    Membership m1 = new Membership();
+                    m1.setUser(userObjA);
+                    m1.setConversation(conv);
+                    m1.setRole("member");
+                    m1.setJoinedAt(LocalDateTime.now());
+
+                    Membership m2 = new Membership();
+                    m2.setUser(userObjB);
+                    m2.setConversation(conv);
+                    m2.setRole("member");
+                    m2.setJoinedAt(LocalDateTime.now());
+
+                    // Save memberships
+                    membershipDAO.save(m1);
+                    membershipDAO.save(m2);
+
+                    System.out.println("[DEBUG] Added users to conversation: " + nameA + ", " + nameB);
+                } else {
+                    System.out.println("[WARN] Could not find one or both users for memberships: " +
+                            nameA + " (" + (userObjA != null) + "), " +
+                            nameB + " (" + (userObjB != null) + ")");
+                }
+            } else {
+                System.out.println("[DEBUG] Found existing conversation: " + convName + " (ID: " + conv.getId() + ")");
+
+                // IMPORTANT: We need to check memberships inside a transaction to avoid LazyInitializationException
+                boolean hasBothMemberships = membershipDAO.hasUserMemberships(conv.getId(), nameA, nameB);
+
+                // If memberships are missing, add them
+                if (!hasBothMemberships) {
+                    System.out.println("[DEBUG] Fixing missing memberships for conversation: " + convName);
+
+                    User userObjA = userDAO.findByUsername(nameA);
+                    User userObjB = userDAO.findByUsername(nameB);
+
+                    if (userObjA != null && userObjB != null) {
+                        // Check if each user already has a membership
+                        boolean userAHasMembership = membershipDAO.hasMembership(conv.getId(), userObjA.getId());
+                        boolean userBHasMembership = membershipDAO.hasMembership(conv.getId(), userObjB.getId());
+
+                        // Add membership for first user if needed
+                        if (!userAHasMembership) {
+                            Membership m1 = new Membership();
+                            m1.setUser(userObjA);
+                            m1.setConversation(conv);
+                            m1.setRole("member");
+                            m1.setJoinedAt(LocalDateTime.now());
+                            membershipDAO.save(m1);
+                            System.out.println("[DEBUG] Added missing membership for: " + nameA);
+                        }
+
+                        // Add membership for second user if needed
+                        if (!userBHasMembership) {
+                            Membership m2 = new Membership();
+                            m2.setUser(userObjB);
+                            m2.setConversation(conv);
+                            m2.setRole("member");
+                            m2.setJoinedAt(LocalDateTime.now());
+                            membershipDAO.save(m2);
+                            System.out.println("[DEBUG] Added missing membership for: " + nameB);
+                        }
+                    }
+                }
             }
-            return c;
+
+            return conv;
         } catch (Exception e) {
+            System.out.println("[ERROR] Failed to find/create conversation: " + e.getMessage());
             e.printStackTrace();
-            System.out.println("Lỗi khi tìm/tạo conversation: " + convName + ", lỗi: " + e.getMessage());
             return null;
         }
+    }
+    /**
+     * Lưu tin nhắn vào DB, gắn với conversation nhất định.
+     * Nội dung sẽ được mã hóa nếu tính năng mã hóa database được bật.
+     */
+    private void saveMessageToDb(String senderUsername, String content, Conversation conv) {
+        // Tìm user
+        User sender = userDAO.findByUsername(senderUsername);
+        if (sender == null) {
+            System.out.println("Không tìm thấy user " + senderUsername + " trong DB!");
+            return; // không lưu được
+        }
+
+        // Tạo message (MessageDAO sẽ xử lý mã hóa nếu cần)
+        Message msg = new Message(conv, sender, content, null);
+        messageDAO.save(msg);
+    }
+
+    /**
+     * Lưu tin nhắn nhóm vào DB.
+     * Được gọi từ GroupMessageService.saveAndBroadcast
+     */
+    public void saveGroupMessage(Conversation conv, User sender, String content) {
+        // Tạo message (MessageDAO sẽ xử lý mã hóa nếu cần)
+        Message msg = new Message(conv, sender, content, null);
+        messageDAO.save(msg);
     }
 }

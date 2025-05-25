@@ -188,33 +188,37 @@ public class ProfileController {
         fileChooser.getExtensionFilters().add(
                 new FileChooser.ExtensionFilter("Hình ảnh", "*.png", "*.jpg", "*.jpeg", "*.gif")
         );
-        
+
         File selectedFile = fileChooser.showOpenDialog(btnChangeAvatar.getScene().getWindow());
         if (selectedFile != null) {
             try {
-                // Tạo thư mục avatars nếu chưa tồn tại
+                // Create avatars directory if it doesn't exist
                 Path avatarsDir = Paths.get("uploads", "avatars");
                 if (!Files.exists(avatarsDir)) {
                     Files.createDirectories(avatarsDir);
                 }
-                
-                // Tạo tên file duy nhất
-                String fileName = currentUsername + "_" + System.currentTimeMillis() + 
+
+                // Create unique filename
+                String fileName = currentUsername + "_" + System.currentTimeMillis() +
                         selectedFile.getName().substring(selectedFile.getName().lastIndexOf("."));
                 Path targetPath = avatarsDir.resolve(fileName);
-                
-                // Sao chép file
+
+                // Copy file
                 Files.copy(selectedFile.toPath(), targetPath);
-                
-                // Cập nhật avatar
+
+                // Update avatar
                 currentAvatarPath = targetPath.toString();
                 useDefaultAvatar = false;
                 showCustomAvatar(currentAvatarPath);
-                
-                // Cập nhật trong database và thông báo server
+
+                // Update in database and notify server
                 if (userService.updateAvatar(currentUsername, selectedFile)) {
-                    // Gửi thông báo thay đổi avatar đến server
+                    // Upload avatar to server
                     ServiceLocator.chat().getClient().uploadAvatar(selectedFile);
+
+                    // Request avatars for all users to ensure everyone has the latest
+                    ServiceLocator.chat().getClient().requestAllAvatars();
+
                     showSuccess("Đã thay đổi ảnh đại diện!");
                 } else {
                     showError("Không thể cập nhật ảnh đại diện trong database");

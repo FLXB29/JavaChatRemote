@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+<?import javafx.scene.text.Font?>
+<?import javafx.scene.effect.DropShadow?>
+
+<AnchorPane xmlns="http://javafx.com/javafx/17"
+            xmlns:fx="http://javafx.com/fxml/1"
+            fx:controller="app.controller.DatabaseEncryptionSettingsController"
+            style="-fx-background-color: #f5f5f5;">
+
+    <VBox spacing="15" AnchorPane.topAnchor="0.0"
+          AnchorPane.rightAnchor="0.0"
+          AnchorPane.bottomAnchor="0.0"
+          AnchorPane.leftAnchor="0.0"
+          style="-fx-background-color: white; -fx-background-radius: 5;">
+
+        <padding>
+            <Insets top="20" right="20" bottom="20" left="20"/>
+        </padding>
+
+        <!-- Tiêu đề -->
+        <HBox alignment="CENTER" style="-fx-background-color: #2196F3; -fx-background-radius: 5;">
+            <padding>
+                <Insets top="15" right="15" bottom="15" left="15"/>
+            </padding>
+
+            <Label text="Cài đặt mã hóa database"
+                   style="-fx-font-size: 20; -fx-font-weight: bold; -fx-text-fill: white;">
+                <effect>
+                    <DropShadow radius="3" offsetX="1" offsetY="1" color="#00000044"/>
+                </effect>
+            </Label>
+
+            <Region HBox.hgrow="ALWAYS"/>
+
+            <ProgressIndicator fx:id="progressIndicator"
+                               prefWidth="24" prefHeight="24"
+                               style="-fx-progress-color: white;"/>
+        </HBox>
+
+        <!-- Panel chính -->
+        <VBox spacing="15" style="-fx-background-color: white; -fx-background-radius: 5;">
+            <padding>
+                <Insets top="10" right="10" bottom="10" left="10"/>
+            </padding>
+
+            <effect>
+                <DropShadow radius="5" offsetX="0" offsetY="1" color="#00000022"/>
+            </effect>
+
+            <!-- Công tắc bật/tắt mã hóa -->
+            <HBox spacing="10" alignment="CENTER_LEFT">
+                <padding>
+                    <Insets top="5" right="5" bottom="5" left="5"/>
+                </padding>
+
+                <CheckBox fx:id="chkEnableEncryption"
+                          text="Bật mã hóa nội dung tin nhắn trong database">
+                    <font>
+                        <Font size="14"/>
+                    </font>
+                </CheckBox>
+            </HBox>
+
+            <Separator/>
+
+            <!-- Phần nhập khóa -->
+            <GridPane vgap="10" hgap="15">
+                <padding>
+                    <Insets top="10" right="0" bottom="10" left="0"/>
+                </padding>
+
+                <columnConstraints>
+                    <ColumnConstraints hgrow="NEVER" minWidth="100"/>
+                    <ColumnConstraints hgrow="ALWAYS"/>
+                </columnConstraints>
+
+                <Label text="Khóa mã hóa:" style="-fx-font-weight: bold;"
+                       GridPane.rowIndex="0" GridPane.columnIndex="0"/>
+
+                <TextField fx:id="txtEncryptionKey"
+                           GridPane.rowIndex="0" GridPane.columnIndex="1"
+                           GridPane.hgrow="ALWAYS"
+                           style="-fx-background-radius: 3;"
+                           promptText="Nhập hoặc tạo khóa mã hóa (ít nhất 16 ký tự)"/>
+
+                <HBox spacing="10" GridPane.rowIndex="1" GridPane.columnIndex="1">
+                    <Button fx:id="btnGenerateKey" text="Tạo khóa mới" onAction="#onGenerateKey"
+                            style="-fx-background-color: #2196F3; -fx-text-fill: white; -fx-background-radius: 3;">
+                        <graphic>
+                            <Region style="-fx-shape: 'M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9c4.97 0 9-4.03 9-9s-4.03-9-9-9zm0 16c-3.87 0-7-3.13-7-7s3.13-7 7-7 7 3.13 7 7-3.13 7-7 7zm1-11h-2v3H8v2h3v3h2v-3h3v-2h-3V8z'; -fx-background-color: white; -fx-min-width: 16; -fx-min-height: 16; -fx-max-width: 16; -fx-max-height: 16;"/>
+                        </graphic>
+                    </Button>
+
+                    <Button fx:id="btnExportKey" text="Xuất khóa" onAction="#onExportKey"
+                            style="-fx-background-color: #4CAF50; -fx-text-fill: white; -fx-background-radius: 3;">
+                        <graphic>
+                            <Region style="-fx-shape: 'M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z'; -fx-background-color: white; -fx-min-width: 16; -fx-min-height: 16; -fx-max-width: 16; -fx-max-height: 16;"/>
+                        </graphic>
+                    </Button>
+
+                    <Button fx:id="btnImportKey" text="Nhập khóa" onAction="#onImportKey"
+                            style="-fx-background-color: #FFC107; -fx-text-fill: white; -fx-background-radius: 3;">
+                        <graphic>
+                            <Region style="-fx-shape: 'M9 16h6v-6h4l-7-7-7 7h4v6zm-4 2h14v2H5v-2z'; -fx-background-color: white; -fx-min-width: 16; -fx-min-height: 16; -fx-max-width: 16; -fx-max-height: 16;"/>
+                        </graphic>
+                    </Button>
+                </HBox>
+            </GridPane>
+
+            <Separator/>
+
+            <!-- Khu vực thông tin -->
+            <TitledPane text="Thông tin về mã hóa" expanded="true" collapsible="true">
+                <content>
+                    <TextArea fx:id="txtInfo" wrapText="true" editable="false" VBox.vgrow="ALWAYS"
+                              style="-fx-control-inner-background: #f8f8f8; -fx-border-color: transparent;">
+                        <font>
+                            <Font size="12"/>
+                        </font>
+                    </TextArea>
+                </content>
+            </TitledPane>
+        </VBox>
+
+        <Separator/>
+
+        <!-- Phần cuối - nút điều khiển -->
+        <HBox spacing="15" alignment="CENTER_RIGHT">
+            <Label fx:id="lblStatus" style="-fx-font-style: italic; -fx-font-size: 13;"/>
+
+            <Region HBox.hgrow="ALWAYS"/>
+
+            <Button fx:id="btnSave" text="Lưu cài đặt" onAction="#onSave" defaultButton="true"
+                    style="-fx-background-color: #4CAF50; -fx-text-fill: white; -fx-font-weight: bold; -fx-background-radius: 3;">
+                <graphic>
+                    <Region style="-fx-shape: 'M17 3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V7l-4-4zm-5 16c-1.66 0-3-1.34-3-3s1.34-3 3-3 3 1.34 3 3-1.34 3-3 3zm3-10H5V5h10v4z'; -fx-background-color: white; -fx-min-width: 16; -fx-min-height: 16; -fx-max-width: 16; -fx-max-height: 16;"/>
+                </graphic>
+            </Button>
+
+            <Button fx:id="btnClose" text="Đóng" onAction="#onClose"
+                    style="-fx-background-color: #9E9E9E; -fx-text-fill: white; -fx-background-radius: 3;">
+                <graphic>
+                    <Region style="-fx-shape: 'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'; -fx-background-color: white; -fx-min-width: 16; -fx-min-height: 16; -fx-max-width: 16; -fx-max-height: 16;"/>
+                </graphic>
+            </Button>
+        </HBox>
+    </VBox>
+</AnchorPane>

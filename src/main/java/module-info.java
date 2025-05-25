@@ -39,6 +39,7 @@ open module application.giaodien {
     requires com.fasterxml.jackson.annotation;
     requires java.desktop;
     requires net.coobird.thumbnailator;
+    requires javafx.media;
 
     /* ================== EXPORT ================== */
     exports application.giaodien;

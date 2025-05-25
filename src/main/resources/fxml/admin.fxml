@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+<?import javafx.geometry.Insets?>
+
+<VBox spacing="15" alignment="CENTER" style="-fx-background-color: #2b2b2b;"
+      xmlns="http://javafx.com/javafx/17" xmlns:fx="http://javafx.com/fxml/1"
+      fx:controller="app.controller.AdminController">
+
+    <padding>
+        <Insets top="20" right="20" bottom="20" left="20"/>
+    </padding>
+
+    <!-- Header -->
+    <HBox alignment="CENTER_LEFT" spacing="10">
+        <Label fx:id="lblUsername" style="-fx-text-fill: white; -fx-font-size: 18; -fx-font-weight: bold;"/>
+        <Region HBox.hgrow="ALWAYS" />
+        <Button fx:id="btnBack" text="Quay lại" onAction="#goBack"/>
+    </HBox>
+
+    <Label text="Quản trị hệ thống" style="-fx-text-fill: white; -fx-font-size: 24; -fx-font-weight: bold;"/>
+
+    <VBox spacing="10" style="-fx-background-color: #3a3a3a; -fx-background-radius: 5; -fx-padding: 15;">
+        <Label text="Cài đặt bảo mật" style="-fx-text-fill: white; -fx-font-size: 18;"/>
+        <Button fx:id="btnOpenDatabaseEncryption" text="Cài đặt mã hóa database"
+                onAction="#openDatabaseEncryptionSettings"
+                style="-fx-pref-width: 300;"/>
+    </VBox>
+
+    <VBox spacing="10" style="-fx-background-color: #3a3a3a; -fx-background-radius: 5; -fx-padding: 15;">
+        <Label text="Quản lý dữ liệu" style="-fx-text-fill: white; -fx-font-size: 18;"/>
+        <Button fx:id="btnBackup" text="Sao lưu database" onAction="#openBackupTool"
+                style="-fx-pref-width: 300;"/>
+        <Button fx:id="btnRestore" text="Khôi phục database" onAction="#openRestoreTool"
+                style="-fx-pref-width: 300;"/>
+    </VBox>
+
+    <VBox spacing="10" style="-fx-background-color: #3a3a3a; -fx-background-radius: 5; -fx-padding: 15;">
+        <Label text="Quản lý người dùng" style="-fx-text-fill: white; -fx-font-size: 18;"/>
+        <Button fx:id="btnUserManagement" text="Quản lý người dùng" onAction="#openUserManagement"
+                style="-fx-pref-width: 300;"/>
+        <Button fx:id="btnSystemStats" text="Thống kê hệ thống" onAction="#openSystemStats"
+                style="-fx-pref-width: 300;"/>
+    </VBox>
+
+    <Label fx:id="lblStatus" style="-fx-text-fill: #4caf50;"/>
+</VBox>

@@ -10,7 +10,7 @@
 <SplitPane fx:id="rootSplit" dividerPositions="0.22" stylesheets="@/css/chat.css" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="app.controller.ChatController">
 
     <!-- ======= PANE 0: Vùng người dùng online ======= -->
-    <VBox prefWidth="260" minWidth="220" maxWidth="340" styleClass="sidebar">
+    <VBox prefWidth="260" minWidth="225" maxWidth="340" styleClass="sidebar">
         <!-- Header với avatar và nút cài đặt -->
         <HBox alignment="CENTER_LEFT" spacing="10" styleClass="sidebar-header">
             <StackPane>
@@ -22,6 +22,20 @@
             <Label fx:id="currentUserLabel" styleClass="current-user-label"/>
 
             <Region HBox.hgrow="ALWAYS"/>
+
+            <!-- Nút refresh đã thêm trực tiếp vào FXML -->
+            <Button fx:id="btnRefresh" onAction="#refreshEverything" styleClass="icon-btn">
+                <graphic>
+                    <ImageView fitWidth="20" preserveRatio="true">
+                        <image>
+                            <Image url="@/icons/refresh.png" />
+                        </image>
+                    </ImageView>
+                </graphic>
+                <tooltip>
+                    <Tooltip text="Làm mới dữ liệu" />
+                </tooltip>
+            </Button>
 
             <Button fx:id="btnSettings" onAction="#onOpenSettings" styleClass="icon-btn">
                 <graphic>

@@ -26,5 +26,8 @@ public enum PacketType {
     FRIEND_ACCEPT,       // chấp nhận lời mời
     FRIEND_REJECT,       // từ chối lời mời
     FRIEND_PENDING_LIST, // trả về danh sách lời mời PENDING
-    FRIEND_STATUS        // trả về trạng thái bạn bè
+    FRIEND_STATUS,        // trả về trạng thái bạn bè
+    FRIEND_REQUEST_NOTIFICATION,  // thông báo có lời mời kết bạn mới
+    FRIEND_REQUEST_ACCEPTED,      // thông báo lời mời được chấp nhận
+    FRIEND_REQUEST_REJECTED       // thông báo lời mời bị từ chối
 }

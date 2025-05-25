@@ -4,6 +4,8 @@ import app.dao.MessageDAO;
 import app.dao.UserDAO;
 import app.model.*;
 import app.repository.ConversationRepository;
+import app.util.DatabaseEncryptionUtil;
+import app.util.DatabaseKeyManager;
 import jakarta.transaction.Transactional;
 import network.Packet;
 import network.PacketType;
@@ -15,14 +17,14 @@ public class GroupMessageService {
 
     private final ConversationRepository convRepo;
     private final MessageDAO messageDao;
-    private final UserDAO    userDao   = new UserDAO();   // nhanh gọn
+    private final UserDAO userDao = new UserDAO();
 
     /* ★ thêm ServerApp để broadcast */
-    private ServerApp server;                  // <─ sẽ “tiêm” ở bước 3
+    private ServerApp server;
     public void setServer(ServerApp s){ this.server = s; }
 
     public GroupMessageService(ConversationRepository c, MessageDAO m) {
-        this.convRepo   = c;
+        this.convRepo = c;
         this.messageDao = m;
     }
 
@@ -32,13 +34,20 @@ public class GroupMessageService {
         Conversation conv = convRepo.findByIdWithMembers(convId)
                 .orElseThrow();
 
-        // 1 ▪ lưu DB
+        // Mã hóa nội dung nếu bật tính năng mã hóa
+        String finalContent = content;
+        if (DatabaseKeyManager.isEncryptionEnabled() && content != null && !content.startsWith("[FILE]")) {
+            finalContent = DatabaseEncryptionUtil.encrypt(content);
+            System.out.println("[DEBUG] Đã mã hóa tin nhắn nhóm: " + content + " -> " + finalContent);
+        }
+
+        // 1 ▪ lưu DB với nội dung đã mã hóa
         Message msg = new Message(conv,
                 userDao.findByUsername(fromUser),
-                content, null);
+                finalContent, null);
         messageDao.save(msg);
 
-        // 2 ▪ broadcast
+        // 2 ▪ broadcast vẫn dùng nội dung gốc để người dùng đọc được
         String payload = fromUser + "|" + content;
         Packet pkt = new Packet(PacketType.GROUP_MSG,
                 String.valueOf(convId),

@@ -277,3 +277,260 @@
 .friend-badge:hover {
     -fx-background-color: #a6a6a6;
 }
+/* Button styles */
+.btn {
+    -fx-padding: 6 12;
+    -fx-background-radius: 18;
+    -fx-font-size: 12px;
+    -fx-font-weight: bold;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.1), 2, 0, 0, 1);
+}
+
+.btn:hover {
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.2), 3, 0, 0, 2);
+}
+
+.btn-primary {
+    -fx-background-color: linear-gradient(to bottom, #007bff, #0056b3);
+    -fx-text-fill: white;
+}
+
+.btn-primary:hover {
+    -fx-background-color: linear-gradient(to bottom, #0056b3, #004085);
+}
+
+.btn-success {
+    -fx-background-color: linear-gradient(to bottom, #28a745, #1e7e34);
+    -fx-text-fill: white;
+}
+
+.btn-success:hover {
+    -fx-background-color: linear-gradient(to bottom, #1e7e34, #155724);
+}
+
+.btn-secondary {
+    -fx-background-color: linear-gradient(to bottom, #6c757d, #545b62);
+    -fx-text-fill: white;
+}
+
+.btn-secondary:hover {
+    -fx-background-color: linear-gradient(to bottom, #545b62, #383d41);
+}
+
+/* Friend Request Styles */
+.friend-request-name {
+    -fx-font-weight: bold;
+    -fx-font-size: 14px;
+    -fx-text-fill: #333;
+}
+
+.friend-request-time {
+    -fx-text-fill: #666;
+    -fx-font-size: 11px;
+}
+
+/* Search User Styles */
+.search-user-name {
+    -fx-font-weight: bold;
+    -fx-font-size: 14px;
+    -fx-text-fill: #333;
+}
+
+.search-user-status {
+    -fx-font-size: 12px;
+    -fx-text-fill: #666;
+}
+
+/* Recent Chat Styles */
+.chat-name {
+    -fx-font-weight: bold;
+    -fx-font-size: 14px;
+    -fx-text-fill: #333;
+}
+
+.chat-message {
+    -fx-text-fill: #666;
+    -fx-font-size: 12px;
+    -fx-wrap-text: false;
+}
+
+.chat-time {
+    -fx-text-fill: #999;
+    -fx-font-size: 11px;
+}
+
+.unread-badge {
+    -fx-background-color: #ff3333;
+    -fx-text-fill: white;
+    -fx-background-radius: 12;
+    -fx-padding: 2 8;
+    -fx-font-size: 10px;
+    -fx-font-weight: bold;
+    -fx-min-width: 20;
+    -fx-alignment: center;
+}
+
+/* List Cell Hover Effects */
+.list-cell:hover {
+    -fx-background-color: #f8f9fa;
+}
+
+.list-cell:selected {
+    -fx-background-color: #e3f2fd;
+}
+
+/* Tab notification badge */
+.tab-pane .tab .tab-label {
+    -fx-font-weight: bold;
+}
+
+/* Avatar styles */
+.avatar-circle {
+    -fx-stroke: #ddd;
+    -fx-stroke-width: 2;
+}
+
+.avatar-initial {
+    -fx-font-weight: bold;
+    -fx-text-fill: white;
+    -fx-font-size: 14px;
+}
+
+/* Search field improvements */
+.search-field {
+    -fx-background-radius: 20;
+    -fx-padding: 8 16;
+    -fx-font-size: 13px;
+}
+
+.search-field:focused {
+    -fx-effect: dropshadow(gaussian, rgba(0,123,255,0.3), 3, 0, 0, 0);
+}
+
+/* Tab notification styles */
+.tab-pane .tab.tab-notification .tab-label {
+    -fx-font-weight: bold;
+    -fx-text-fill: #ff3333;
+    -fx-effect: dropshadow(gaussian, rgba(255,51,51,0.3), 2, 0, 0, 0);
+}
+
+.tab-pane .tab.tab-notification {
+    -fx-background-color: linear-gradient(to bottom, #fff5f5, #ffebee);
+}
+
+.tab-pane .tab.tab-notification:selected {
+    -fx-background-color: linear-gradient(to bottom, #ffebee, #ffcdd2);
+}
+
+/* Badge count styling trong tab */
+.tab-label {
+    -fx-font-size: 13px;
+}
+
+/* Animation cho tab notification */
+.tab-notification {
+    -fx-animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { -fx-effect: dropshadow(gaussian, rgba(255,51,51,0.3), 2, 0, 0, 0); }
+    50% { -fx-effect: dropshadow(gaussian, rgba(255,51,51,0.6), 4, 0, 0, 0); }
+    100% { -fx-effect: dropshadow(gaussian, rgba(255,51,51,0.3), 2, 0, 0, 0); }
+}
+
+/* Welcome notification dialog styling */
+.alert.information .header-panel {
+    -fx-background-color: linear-gradient(to bottom, #4CAF50, #45a049);
+}
+
+.alert.information .header-panel .label {
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+}
+
+/* Button trong notification dialog */
+.alert .button-bar .button {
+    -fx-background-radius: 20;
+    -fx-padding: 8 16;
+}
+
+.alert .button-bar .button:default {
+    -fx-background-color: linear-gradient(to bottom, #4CAF50, #45a049);
+    -fx-text-fill: white;
+}
+
+/* Friend request list khi có notification mới */
+.list-view.has-notification {
+    -fx-border-color: #ff3333;
+    -fx-border-width: 2;
+    -fx-border-radius: 5;
+    -fx-effect: dropshadow(gaussian, rgba(255,51,51,0.2), 5, 0, 0, 0);
+}
+
+/* Sidebar notification indicator */
+.sidebar-header .notification-dot {
+    -fx-background-color: #ff3333;
+    -fx-background-radius: 50%;
+    -fx-min-width: 12px;
+    -fx-min-height: 12px;
+    -fx-max-width: 12px;
+    -fx-max-height: 12px;
+}
+
+/* Friend request cell highlighting */
+.list-cell.friend-request-new {
+    -fx-background-color: linear-gradient(to right, #e8f5e8, #f0f8f0);
+    -fx-border-color: #4CAF50;
+    -fx-border-width: 0 0 0 3;
+}
+
+.list-cell.friend-request-new:hover {
+    -fx-background-color: linear-gradient(to right, #d4edda, #e8f5e8);
+}
+
+/* Loading indicator */
+.loading-indicator {
+    -fx-background-color: rgba(0,0,0,0.7);
+    -fx-background-radius: 10;
+    -fx-padding: 20;
+    -fx-alignment: center;
+}
+
+.loading-indicator .label {
+    -fx-text-fill: white;
+    -fx-font-size: 14px;
+}
+
+/* Toast notification (alternative to Alert) */
+.toast-notification {
+    -fx-background-color: rgba(76, 175, 80, 0.9);
+    -fx-background-radius: 10;
+    -fx-padding: 10 15;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3), 5, 0, 0, 2);
+}
+
+.toast-notification .label {
+    -fx-text-fill: white;
+    -fx-font-weight: bold;
+}
+
+/* Tab badge pulse animation */
+@keyframes badge-pulse {
+    0% {
+        -fx-scale-x: 1.0;
+        -fx-scale-y: 1.0;
+    }
+    50% {
+        -fx-scale-x: 1.1;
+        -fx-scale-y: 1.1;
+    }
+    100% {
+        -fx-scale-x: 1.0;
+        -fx-scale-y: 1.0;
+    }
+}
+
+.tab-notification .tab-label {
+    -fx-animation: badge-pulse 1.5s infinite ease-in-out;
+}
