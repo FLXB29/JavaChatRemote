@@ -9,7 +9,7 @@
 ## Hướng dẫn sử dụng cho Client (người kết nối)
 
 1. Clone repository về máy
-2. Mở project trong IDE (IntelliJ IDEA, Eclipse, etc.)
+2. Mở project trong IDE (IntelliJ IbảnhDEA, Eclipse, etc.)
 3. Mở class `app.ClientApp.java`
 4. Thay đổi dòng `String serverIP = "14.226.123.235";` thành IP của server
 5. Chạy class `app.ClientApp` để khởi động ứng dụng
