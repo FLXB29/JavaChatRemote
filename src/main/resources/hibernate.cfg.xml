@@ -6,9 +6,13 @@
     <session-factory>
         <!-- Database connection settings -->
         <property name="connection.driver_class">com.mysql.cj.jdbc.Driver</property>
-        <property name="connection.url">jdbc:mysql://13.229.231.49:3306/chatdb?serverTimezone=UTC</property>
-        <property name="connection.username">chatuser</property>
-        <property name="connection.password">123456</property>
+
+<!--        <property name="connection.url">jdbc:mysql://13.229.231.49:3306/chatdb?serverTimezone=UTC</property>-->
+        <property name="connection.url">jdbc:mysql://localhost:3306/chatdb?serverTimezone=UTC</property>
+<!--        <property name="connection.username">chatuser</property>-->
+        <property name="connection.username">root</property>
+
+<!--        <property name="connection.password">123456</property>-->
 
         <!-- JDBC connection pool (use the built-in) -->
         <property name="connection.pool_size">1</property>

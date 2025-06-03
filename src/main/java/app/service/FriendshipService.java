@@ -1,7 +1,11 @@
 package app.service;
 
+import app.dao.ConversationDAO;
 import app.dao.FriendshipDAO;
+import app.dao.MembershipDAO;
+import app.model.Conversation;
 import app.model.Friendship;
+import app.model.Membership;
 import app.model.User;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -33,6 +37,23 @@ public class FriendshipService {
             throw new IllegalStateException("Không có lời mời hợp lệ");
         f.setStatus(Friendship.Status.ACCEPTED);
         dao.update(f);
+
+        // Create private conversation if it doesn't exist
+        ConversationDAO convDAO = new ConversationDAO();
+        String nameA = (from.getUsername().compareTo(to.getUsername()) < 0) ? from.getUsername() : to.getUsername();
+        String nameB = (from.getUsername().compareTo(to.getUsername()) < 0) ? to.getUsername() : from.getUsername();
+        String convName = nameA + "|" + nameB;
+
+        Conversation conv = convDAO.findByName(convName);
+        if (conv == null) {
+            conv = new Conversation("PRIVATE", convName);
+            convDAO.save(conv);
+
+            // Add both users as members
+            MembershipDAO membershipDAO = new MembershipDAO();
+            membershipDAO.save(new Membership(from, conv, "member"));
+            membershipDAO.save(new Membership(to, conv, "member"));
+        }
     }
 
     public void rejectFriendRequest(User from, User to) {

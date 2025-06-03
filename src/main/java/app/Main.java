@@ -1,5 +1,6 @@
 package app;
 
+import app.util.DatabaseKeyManager;
 import app.util.EmailUtil;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
@@ -12,7 +13,8 @@ public class Main extends Application {
     @Override
     public void start(Stage stage) throws Exception {
         ServiceLocator.init(false);      // khởi tạo Service cho client
-
+        // In main method or initialization block
+        DatabaseKeyManager.initialize();
         FXMLLoader fxml = new FXMLLoader(getClass().getResource("/fxml/login.fxml"));
         Scene scene = new Scene(fxml.load());
         scene.getStylesheets().addAll(

@@ -1,6 +1,7 @@
 package network;
 
 import app.util.Config;
+//import app.util.DatabaseKeyManager;
 import app.util.DatabaseKeyManager;
 import app.util.HibernateUtil;
 import network.ServerApp;
@@ -13,8 +14,7 @@ public class MainServer {
             // Config.load();          // ← Bỏ comment nếu cần
 
             /* 2 ▪ Khởi tạo mã hóa database */
-            System.out.println("Initializing database encryption...");
-            DatabaseKeyManager.initialize();
+//             DatabaseKeyManager.initialize();  // ← Bỏ comment nếu cần khởi tạo mã hóa database
 
             /* 3 ▪ (Tuỳ chọn) khởi tạo Hibernate sớm để bắt lỗi cấu hình sớm */
             HibernateUtil.getSessionFactory();

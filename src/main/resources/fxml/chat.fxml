@@ -37,6 +37,20 @@
                 </tooltip>
             </Button>
 
+            <!-- Thêm nút đăng xuất -->
+            <Button fx:id="btnLogout" onAction="#onLogout" styleClass="icon-btn">
+                <graphic>
+                    <ImageView fitWidth="20" preserveRatio="true">
+                        <image>
+                            <Image url="@/icons/logout.png" />
+                        </image>
+                    </ImageView>
+                </graphic>
+                <tooltip>
+                    <Tooltip text="Đăng xuất" />
+                </tooltip>
+            </Button>
+
             <Button fx:id="btnSettings" onAction="#onOpenSettings" styleClass="icon-btn">
                 <graphic>
                     <ImageView fitWidth="20" preserveRatio="true">

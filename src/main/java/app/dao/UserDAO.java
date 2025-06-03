@@ -35,8 +35,6 @@ public class UserDAO {
 
     public User findByUsername(String username) {
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            // Ở đây ta giả sử username duy nhất (unique)
-            // Dùng HQL hoặc Criteria đều được, ví dụ HQL:
             String hql = "FROM User WHERE username = :uname";
             return session.createQuery(hql, User.class)
                     .setParameter("uname", username)
@@ -50,11 +48,19 @@ public class UserDAO {
         }
     }
 
+    /**
+     * Tìm kiếm người dùng theo tiền tố của username, sử dụng LIKE.
+     * @param keyword Tiền tố username cần tìm.
+     * @return Danh sách người dùng phù hợp.
+     */
     public List<User> searchByUsernamePrefix(String keyword) {
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            String sql = "SELECT * FROM users WHERE MATCH(username) AGAINST(:kw IN BOOLEAN MODE) LIMIT 10";
+            // Sử dụng Native SQL với LIKE
+            // Lưu ý: tên bảng và tên cột phải khớp với định nghĩa trong CSDL
+            String sql = "SELECT * FROM users WHERE username LIKE :kw LIMIT 10";
             return session.createNativeQuery(sql, User.class)
-                    .setParameter("kw", "+" + keyword + "*")
+                    // Thêm ký tự '%' vào cuối keyword để tìm kiếm tiền tố
+                    .setParameter("kw", keyword + "%")
                     .list();
         }
     }

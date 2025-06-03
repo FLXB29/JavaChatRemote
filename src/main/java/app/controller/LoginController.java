@@ -3,6 +3,7 @@ package app.controller;
 import app.ServiceLocator;
 import app.service.AuthService;
 import app.service.UserService;
+import app.util.DatabaseKeyManager;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Parent;
@@ -64,6 +65,7 @@ public class LoginController {
         boolean ok = userService.login(username, password);
 
         if (ok) {
+            DatabaseKeyManager.initialize();
             // Đăng nhập thành công -> chuyển sang màn hình Chat
             goToChat(username);
         } else {

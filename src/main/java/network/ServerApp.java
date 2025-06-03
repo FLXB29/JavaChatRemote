@@ -6,7 +6,7 @@ import app.model.*;
 import app.service.GroupMessageService;
 import app.util.Config;
 import app.util.DatabaseEncryptionUtil;
-import app.util.DatabaseKeyManager;
+//import app.util.DatabaseKeyManager;
 import app.util.HibernateUtil;
 import com.google.gson.ExclusionStrategy;
 import com.google.gson.FieldAttributes;
@@ -84,10 +84,7 @@ public class ServerApp {
                 return;
             }
             // Khởi tạo DatabaseKeyManager
-            if (!DatabaseKeyManager.isInitialized()) {
-                DatabaseKeyManager.initialize();
-                System.out.println("[INFO] Đã khởi tạo DatabaseKeyManager");
-            }
+
 
             if (server == null) {
                 server = new ServerSocket(port);
@@ -204,7 +201,6 @@ public class ServerApp {
                             broadcastUserList();
                         }
                         case MSG -> {
-                            // Nhận tin MSG (chat chung)
                             if (username == null) {
                                 System.out.println("Lỗi: username là null khi xử lý MSG");
                                 break;
@@ -213,10 +209,10 @@ public class ServerApp {
                             String txt = new String(pkt.payload());
                             System.out.println("MSG from " + from + ": " + txt);
 
-                            // 1) Lưu DB
+                            // 1) Lưu DB với mã hóa
                             saveMessageToDb(from, txt, globalConv);
 
-                            // 2) Gửi CHO TẤT CẢ, kể cả người gửi
+                            // 2) Gửi CHO TẤT CẢ content gốc (chưa mã hóa)
                             broadcast(new Packet(PacketType.MSG, from, pkt.payload()));
                         }
                         case FILE -> {
@@ -319,20 +315,18 @@ public class ServerApp {
 
 
                         case PM -> {
-                            String toUser  = pkt.header();  // e.g. "bob"
+                            String toUser = pkt.header();
                             String content = new String(pkt.payload());
-                            String from    = username;      // e.g. "alice"
-                            System.out.println("PM from " + from + " to " + toUser + ": " + content);
+                            String from = username;
 
                             // 1) Tìm hoặc tạo Conversation riêng
                             Conversation conv = findOrCreatePrivateConversation(from, toUser);
 
-                            // 2) Lưu DB
+                            // 2) Lưu DB với mã hóa
                             saveMessageToDb(from, content, conv);
 
-                            // 3) Gửi cho người nhận
+                            // 3) Gửi content gốc (chưa mã hóa) cho người nhận
                             sendToUser(toUser, new Packet(PacketType.PM, from, content.getBytes()));
-                            // 4) Gửi cho chính người gửi (để họ cũng nhận & hiển thị tin)
                             sendToUser(from, new Packet(PacketType.PM, from, content.getBytes()));
                         }
 
@@ -347,7 +341,6 @@ public class ServerApp {
                                 }
                                 String fromUser = parts[0];
                                 String target = parts[1];
-                                System.out.println("Xử lý GET_HISTORY: fromUser=" + fromUser + ", target=" + target);
 
                                 Conversation conv;
                                 if (target.equals("Global")) {
@@ -355,31 +348,24 @@ public class ServerApp {
                                 } else {
                                     conv = findOrCreatePrivateConversation(fromUser, target);
                                 }
+
                                 if (conv == null) {
-                                    System.out.println("Lỗi: Không tìm thấy hoặc tạo được conversation cho " + fromUser + "->" + target);
+                                    System.out.println("Lỗi: Không tìm thấy conversation");
                                     break;
                                 }
 
                                 List<Message> messages = messageDAO.findByConversationId(conv.getId());
-                                System.out.println("Số tin nhắn tìm thấy: " + messages.size());
 
+                                // SỬ DỤNG convertMessagesToJson để giải mã
                                 String json = convertMessagesToJson(messages);
-                                System.out.println("Gửi HISTORY JSON: " + json);
-
-                                // header = convId   (giữ nguyên kiểu String)
-                                Packet resp = new Packet(
-                                        PacketType.HISTORY,
-                                        String.valueOf(conv.getId()),   // <── thay "HISTORY" bằng convId
-                                        json.getBytes()
-                                );
+                                Packet resp = new Packet(PacketType.HISTORY, String.valueOf(conv.getId()), json.getBytes());
                                 sendToUser(fromUser, resp);
 
                             } catch (Exception e) {
                                 e.printStackTrace();
                                 System.out.println("Lỗi xử lý GET_HISTORY: " + e.getMessage());
                             }
-                        }
-                        case JOIN_CONV -> {
+                        }                        case JOIN_CONV -> {
                             long convId = Long.parseLong(pkt.header());
                             Conversation conv = conversationDAO.findById(convId);
                             if(conv == null) break;
@@ -415,8 +401,8 @@ public class ServerApp {
                             long convId = Long.parseLong(pkt.header());
                             String content = new String(pkt.payload());
 
-                            groupSvc.saveAndBroadcast(convId, username, content);   // ✔
-
+                            // Lưu với mã hóa
+                            groupSvc.saveAndBroadcast(convId, username, content);
                         }
                         case GET_THUMB -> {
                             String id = pkt.header();
@@ -831,30 +817,27 @@ public class ServerApp {
         }
 
         private String convertMessagesToJson(List<Message> messages) {
-            // Tạo list DTO
             List<MessageDTO> dtoList = new ArrayList<>();
             for (Message m : messages) {
-                String content = m.getContent();
+                // GIẢI MÃ content trước khi tạo DTO
+                String decryptedContent = DatabaseEncryptionUtil.decrypt(m.getContent());
 
-                // Giải mã nếu cần
-                if (DatabaseEncryptionUtil.isEncrypted(content)) {
-                    content = DatabaseEncryptionUtil.decrypt(content);
-                    System.out.println("[DEBUG] Đã giải mã tin nhắn: " + m.getContent() + " -> " + content);
+                // Log để debug
+                if (m.getContent().startsWith("DBENC:")) {
+                    System.out.println("[DEBUG] Giải mã tin nhắn từ " + m.getSender().getUsername());
                 }
 
                 dtoList.add(new MessageDTO(
                         m.getSender().getUsername(),
-                        content,
+                        decryptedContent,  // Gửi content ĐÃ GIẢI MÃ
                         m.getCreatedAt()
                 ));
             }
 
-            // Tạo Gson với adapter LocalDateTime
             Gson gson = new GsonBuilder()
                     .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
                     .create();
 
-            // Trả về chuỗi JSON
             return gson.toJson(dtoList);
         }
         private void addMembership(String username, Conversation g, String role){
@@ -868,29 +851,34 @@ public class ServerApp {
         }
 
 
+
+
         /**
          * Lưu tin nhắn vào DB, gắn với conversation nhất định.
          */
+
+
         private void saveMessageToDb(String senderUsername, String content, Conversation conv) {
-            // Tìm User từ username
             User sender = userDAO.findByUsername(senderUsername);
             if (sender == null) {
                 System.out.println("Không tìm thấy user " + senderUsername + " trong DB!");
                 return;
             }
 
-            // Mã hóa nội dung nếu bật tính năng mã hóa
+            // LUÔN mã hóa content trước khi lưu (trừ tin nhắn file)
             String finalContent = content;
-            if (DatabaseKeyManager.isEncryptionEnabled() && content != null && !content.startsWith("[FILE]")) {
+            if (!content.startsWith("[FILE]")) {
                 finalContent = DatabaseEncryptionUtil.encrypt(content);
-                System.out.println("[DEBUG] Đã mã hóa tin nhắn: " + content + " -> " + finalContent);
             }
 
-            // Tạo message
+            // Tạo message với content đã xử lý
             Message msg = new Message(conv, sender, finalContent, null);
             messageDAO.save(msg);
-        }
 
+            System.out.println("[DEBUG] Đã lưu tin nhắn" +
+                    (finalContent.startsWith("DBENC:") ? " (đã mã hóa)" : "") +
+                    ": " + finalContent.substring(0, Math.min(30, finalContent.length())) + "...");
+        }
         /**
          * Gửi 1 packet đến client này.
          */
@@ -1009,18 +997,6 @@ public class ServerApp {
      * Lưu tin nhắn vào DB, gắn với conversation nhất định.
      * Nội dung sẽ được mã hóa nếu tính năng mã hóa database được bật.
      */
-    private void saveMessageToDb(String senderUsername, String content, Conversation conv) {
-        // Tìm user
-        User sender = userDAO.findByUsername(senderUsername);
-        if (sender == null) {
-            System.out.println("Không tìm thấy user " + senderUsername + " trong DB!");
-            return; // không lưu được
-        }
-
-        // Tạo message (MessageDAO sẽ xử lý mã hóa nếu cần)
-        Message msg = new Message(conv, sender, content, null);
-        messageDAO.save(msg);
-    }
 
     /**
      * Lưu tin nhắn nhóm vào DB.

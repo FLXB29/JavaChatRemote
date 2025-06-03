@@ -3,7 +3,10 @@ package app.controller;
 import app.LocalDateTimeAdapter;
 import app.service.ChatService;
 import app.service.UserService;
-import app.util.ConversationKeyManager;
+//import app.util.ConversationKeyManager;
+import app.util.DatabaseEncryptionUtil;
+//import app.util.DatabaseKeyManager;
+import app.util.DatabaseKeyManager;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -42,6 +45,7 @@ import java.nio.file.Files;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import org.kordamp.ikonli.javafx.FontIcon;
 import javafx.scene.paint.Color;
@@ -74,7 +78,7 @@ public class ChatController {
     private TextField txtMessage, searchField;
 
     @FXML
-    private Button btnAttachFile, btnEmoji, btnSend, btnSettings, btnBack,btnCreateGroup;
+    private Button btnAttachFile, btnEmoji, btnSend, btnSettings, btnBack,btnCreateGroup, btnLogout;
 
     @FXML
     private ListView<String> listGroups;
@@ -98,7 +102,7 @@ public class ChatController {
     private Label chatTitleLabel;
 
     // 1) Thuộc tính
-    private String lastPmTarget;
+    public String lastPmTarget;
     private boolean hasUnreadFriendRequests = false;
 
 
@@ -164,6 +168,7 @@ public class ChatController {
     @FXML
     private void initialize() {
         // 1) Gọi service bind UI
+        DatabaseKeyManager.initialize();
         ServiceLocator.chat().bindUI(this);
         this.clientConnection = ServiceLocator.chat().getClient();
 
@@ -190,7 +195,6 @@ public class ChatController {
         setupEventListeners();
         setupRecentChatsClickHandler(); // Add this line
         setupFocusListener(); // Add this line
-        setupAdminMenu();
 
 
 
@@ -218,7 +222,7 @@ public class ChatController {
                 clientConnection.requestHistory(currentUser, "Global");
 
                 // Cập nhật UI cho Global Chat
-                updateUIForGlobalChat();
+//                updateUIForGlobalChat();
             } else {
                 // For other chats, check if it's a group or private
                 boolean isGroup = false;
@@ -352,7 +356,8 @@ public class ChatController {
 
             // Update friend requests list
             updateFriendRequests(list);
-
+            loadRecentChats();
+            refreshAfterFriendshipChange();
             // Update badge if có requests
             Platform.runLater(() -> {
                 if (!list.isEmpty()) {
@@ -380,55 +385,54 @@ public class ChatController {
         });
     }
     private void setupSearchFieldListener() {
-        searchField.textProperty().addListener((obs, oldVal, newVal) -> {
-            boolean isSearching = newVal != null && !newVal.isBlank();
+        /* === Lắng nghe khi người dùng nhập vào trường tìm kiếm === */
+        searchField.textProperty().addListener((obs, oldText, newText) -> {
+            if (newText == null || newText.isBlank()) {
+                // Nếu rỗng, ẩn danh sách tìm kiếm và hiện danh sách chat gần đây
+                Platform.runLater(() -> {
+                    listRecentChats.setVisible(true);
+                    listRecentChats.setManaged(true);
+                    listSearchUsers.setVisible(false);
+                    listSearchUsers.setManaged(false);
+                    
+                    // Ẩn nút back khi không tìm kiếm
+                    btnBack.setVisible(false);
+                    btnBack.setManaged(false);
+                });
+                return;
+            }
 
-            // Toggle visibility between recent chats and search results
-            listRecentChats.setVisible(!isSearching);
-            listRecentChats.setManaged(!isSearching);
-            listSearchUsers.setVisible(isSearching);
-            listSearchUsers.setManaged(isSearching);
+            // Tìm kiếm người dùng theo newText
+            String query = newText.trim();
+            if (query.length() < 2) return; // Cần ít nhất 2 ký tự để tìm kiếm
 
-            if (isSearching) {
-                // Show loading indicator
-                Label loadingLabel = new Label("Đang tìm kiếm...");
-                loadingLabel.setStyle("-fx-text-fill: #999999; -fx-font-style: italic;");
-                listSearchUsers.setPlaceholder(loadingLabel);
-
-                // Search on background thread
-                CompletableFuture.runAsync(() -> {
-                    try {
-                        List<User> found = ServiceLocator.userService().searchUsers(newVal);
-                        System.out.println("[DEBUG] Search '" + newVal + "' => " + found.size() + " users");
-
+            // Thực hiện tìm kiếm
+            CompletableFuture.runAsync(() -> {
+                try {
+                    // Tìm kiếm danh bạ
+                    List<User> results = ServiceLocator.userService().searchUsers(query);
+                    
+                    // Hiển thị kết quả tìm kiếm
+                    if (!results.isEmpty()) {
                         Platform.runLater(() -> {
-                            if (found.isEmpty()) {
-                                Label noResultsLabel = new Label("Không tìm thấy người dùng");
-                                noResultsLabel.setStyle("-fx-text-fill: #999999;");
-                                listSearchUsers.setPlaceholder(noResultsLabel);
-                            } else {
-                                listSearchUsers.setPlaceholder(null);
-                            }
-
-                            listSearchUsers.getItems().setAll(found);
-                            listSearchUsers.refresh();
-                        });
-                    } catch (Exception e) {
-                        System.out.println("[ERROR] Search failed: " + e.getMessage());
-                        e.printStackTrace();
-
-                        Platform.runLater(() -> {
-                            Label errorLabel = new Label("Lỗi tìm kiếm");
-                            errorLabel.setStyle("-fx-text-fill: #f44336;");
-                            listSearchUsers.setPlaceholder(errorLabel);
-                            listSearchUsers.getItems().clear();
+                            listSearchUsers.getItems().setAll(results);
+                            listSearchUsers.setVisible(true);
+                            listSearchUsers.setManaged(true);
+                            listRecentChats.setVisible(false);
+                            listRecentChats.setManaged(false);
+                            
+                            // Hiển thị nút back khi đang tìm kiếm
+                            btnBack.setVisible(true);
+                            btnBack.setManaged(true);
                         });
                     }
-                });
-            }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    showError("Lỗi tìm kiếm người dùng", e);
+                }
+            });
         });
 
-        // Handle focus lost
         searchField.focusedProperty().addListener((obs, wasFocused, isNowFocused) -> {
             if (!isNowFocused && (searchField.getText() == null || searchField.getText().isBlank())) {
                 // Switch back to recent chats when focus is lost and search is empty
@@ -437,6 +441,10 @@ public class ChatController {
                     listRecentChats.setManaged(true);
                     listSearchUsers.setVisible(false);
                     listSearchUsers.setManaged(false);
+                    
+                    // Ẩn nút back khi không còn tìm kiếm
+                    btnBack.setVisible(false);
+                    btnBack.setManaged(false);
                 });
             }
         });
@@ -670,45 +678,10 @@ public class ChatController {
         scrollPane.setVbarPolicy(ScrollPane.ScrollBarPolicy.ALWAYS);
         scrollPane.setHbarPolicy(ScrollPane.ScrollBarPolicy.NEVER);
         scrollPane.setStyle("-fx-background-color: #2b2b2b; -fx-border-color: #3a3a3a;");
-
-//        // Thêm nút refresh vào header
-//        Button btnRefresh = new Button();
-//        btnRefresh.getStyleClass().add("icon-btn");
-
-//        try {
-//            // Tìm đường dẫn đúng đến hình ảnh
-//            URL refreshIconUrl = getClass().getResource("/icons/refresh.png");
-//            if (refreshIconUrl != null) {
-//                ImageView refreshIcon = new ImageView(new Image(refreshIconUrl.toString()));
-//                refreshIcon.setFitWidth(20);
-//                refreshIcon.setFitHeight(20);
-//                btnRefresh.setGraphic(refreshIcon);
-//            } else {
-//                // Fallback nếu không tìm thấy hình
-//                FontIcon refreshIcon = new FontIcon("fas-sync-alt");
-//                refreshIcon.setIconColor(Color.WHITE);
-//                refreshIcon.setIconSize(16);
-//                btnRefresh.setGraphic(refreshIcon);
-//            }
-//        } catch (Exception e) {
-//            System.out.println("Không thể tải icon refresh: " + e.getMessage());
-//            btnRefresh.setText("↻"); // Fallback là ký tự Unicode
-//        }
-//
-//        btnRefresh.setTooltip(new Tooltip("Làm mới"));
-
-        // Tìm HBox header chứa avatar bằng cách lấy parent của userAvatarCircle
-        if (userAvatarCircle.getParent() != null && userAvatarCircle.getParent().getParent() instanceof HBox) {
-            HBox headerBox = (HBox) userAvatarCircle.getParent().getParent();
-            // Thêm nút refresh vào vị trí trước nút settings
-            int insertIndex = headerBox.getChildren().size() - 1;  // Vị trí trước nút cuối cùng (settings)
-//            headerBox.getChildren().add(insertIndex, btnRefresh);
-        } else {
-            System.out.println("[WARNING] Không thể tìm thấy HBox header để thêm nút refresh");
-        }
-
-        // Set action for refresh button
-//        btnRefresh.setOnAction(e -> refreshEverything());
+        
+        // Ẩn nút back mặc định
+        btnBack.setVisible(false);
+        btnBack.setManaged(false);
 
         // Avatar callback
         clientConnection.setOnAvatarUpdated((username, avatarData) -> {
@@ -734,7 +707,7 @@ public class ChatController {
             if (newScene == null) return;
             newScene.windowProperty().addListener((o, oldWin, newWin) -> {
                 if (newWin != null) {
-                    ((Stage) newWin).setOnCloseRequest(ev -> ServiceLocator.chat().shutdown());
+                    newWin.setOnCloseRequest(ev -> ServiceLocator.chat().shutdown());
                 }
             });
         });
@@ -1398,6 +1371,67 @@ public class ChatController {
             }
         }
     }
+//    private void loadRecentChats() {
+//        // Show loading indicator
+//        Platform.runLater(() -> {
+//            if (listRecentChats.getItems().isEmpty()) {
+//                Label loadingLabel = new Label("Đang tải...");
+//                loadingLabel.setStyle("-fx-text-fill: #999999; -fx-font-style: italic;");
+//                listRecentChats.setPlaceholder(loadingLabel);
+//            }
+//        });
+//
+//        CompletableFuture.runAsync(() -> {
+//            try {
+//                // Get current user
+//                User currentUserObj = ServiceLocator.userService().getCurrentUser();
+//                if (currentUserObj == null) {
+//                    System.out.println("[ERROR] Cannot load recent chats: current user is null");
+//                    return;
+//                }
+//
+//                // Get recent chats
+//                List<RecentChatCellData> data = ServiceLocator.messageService()
+//                        .getRecentChats(currentUserObj);
+//
+//                // Apply unread counts from our map
+//                List<RecentChatCellData> updatedData = data.stream()
+//                        .map(chat -> {
+//                            int unreadCount = unreadMap.getOrDefault(chat.chatName, 0);
+//
+//                            // Hiển thị indicator mã hóa nếu tin nhắn là "[Tin nhắn mã hóa]"
+//                            String displayMessage = chat.lastMessage;
+//                            if ("[Tin nhắn mã hóa]".equals(chat.lastMessage)) {
+//                                displayMessage = "🔒 " + chat.lastMessage;
+//                            }
+//
+//                            return new RecentChatCellData(
+//                                    chat.chatName,
+//                                    displayMessage,
+//                                    chat.time,
+//                                    chat.avatarPath,
+//                                    unreadCount
+//                            );
+//                        })
+//                        .collect(Collectors.toList());
+//
+//                Platform.runLater(() -> {
+//                    listRecentChats.setPlaceholder(null);
+//                    listRecentChats.getItems().setAll(updatedData);
+//                    listRecentChats.refresh();
+//                });
+//            } catch (Exception e) {
+//                System.out.println("[ERROR] Failed to load recent chats: " + e.getMessage());
+//                e.printStackTrace();
+//
+//                Platform.runLater(() -> {
+//                    Label errorLabel = new Label("Không thể tải danh sách chat");
+//                    errorLabel.setStyle("-fx-text-fill: #ff4444;");
+//                    listRecentChats.setPlaceholder(errorLabel);
+//                });
+//            }
+//        });
+//    }
 
     private void loadRecentChats() {
         // Show loading indicator
@@ -1488,7 +1522,6 @@ public class ChatController {
 
         // Hiển thị avatar người dùng
         updateUserAvatar();
-        setupAdminMenu();
 
         // Load data cũ nếu có
         Conversation conv = ServiceLocator.chat().getConversation();
@@ -1506,16 +1539,14 @@ public class ChatController {
             }
         }
 
-        // *** THÊM: Auto-check friend requests khi set user ***
+        // Auto-check friend requests khi set user
         Platform.runLater(() -> {
-            // Delay một chút để UI load xong
             Timeline timeline = new Timeline(new KeyFrame(Duration.seconds(1), e -> {
                 checkUnreadNotifications();
             }));
             timeline.play();
         });
     }
-
     public String getCurrentUser() {
         return currentUser;
     }
@@ -1638,11 +1669,19 @@ public class ChatController {
         if (content.isEmpty()) return;
 
         try {
-            // Sử dụng phương thức sendMessage mới từ ChatService
-            ServiceLocator.chat().sendMessage(currentUser, content);
-            txtMessage.clear();
+            // Gửi tin nhắn - server sẽ tự động mã hóa trước khi lưu
+            if ("Global".equals(currentTarget)) {
+                clientConnection.sendText(content);
+            } else if (groupMap.containsKey(currentTarget)) {
+                long gid = groupMap.get(currentTarget);
+                clientConnection.sendGroup(gid, content);
+                lastPmTarget = currentTarget;
+            } else {
+                clientConnection.sendPrivate(currentTarget, content);
+                lastPmTarget = currentTarget;
+            }
 
-            // Refresh recent chats immediately after sending
+            txtMessage.clear();
             refreshRecentChats();
         } catch (Exception e) {
             showError("Không thể gửi tin nhắn", e);
@@ -1778,33 +1817,6 @@ public class ChatController {
         return gson.fromJson(json, listType);
     }
 
-    public void displayIncomingMessage(String from, String content) {
-        HBox bubbleBox = new HBox(5);
-        bubbleBox.setMaxWidth(400);
-        bubbleBox.setStyle("-fx-alignment: CENTER_LEFT;");
-
-        Label lbl = new Label(from + ": " + content);
-        lbl.setWrapText(true);
-        lbl.setStyle("-fx-background-color: #3a3a3a; -fx-text-fill: white; "
-                + "-fx-padding: 8; -fx-background-radius: 8;");
-
-        bubbleBox.getChildren().add(lbl);
-        messagesContainer.getChildren().add(bubbleBox);
-    }
-
-    public void displayOutgoingMessage(String from, String content) {
-        HBox bubbleBox = new HBox(5);
-        bubbleBox.setMaxWidth(400);
-        bubbleBox.setStyle("-fx-alignment: CENTER_RIGHT;");
-
-        Label lbl = new Label(content);
-        lbl.setWrapText(true);
-        lbl.setStyle("-fx-background-color: #0078fe; -fx-text-fill: white; "
-                + "-fx-padding: 8; -fx-background-radius: 8;");
-
-        bubbleBox.getChildren().add(lbl);
-        messagesContainer.getChildren().add(bubbleBox);
-    }
 
     /** Xây TextFlow có emoji màu */
     public static TextFlow buildEmojiTextFlow(String message) {
@@ -1940,6 +1952,9 @@ public class ChatController {
         return String.format("%.1f %s", bytes / Math.pow(1024, exp), unit);
     }
 
+    /**
+     * Hiển thị tin nhắn với khả năng xử lý mã hóa
+     */
     public void displayMessage(String from, String content, boolean isOutgoing, LocalDateTime sentTime) {
         HBox bubbleBox = new HBox(5);
         bubbleBox.setPrefWidth(Double.MAX_VALUE);
@@ -1958,32 +1973,23 @@ public class ChatController {
 
         Node msgNode;
         if (isFileMessage) {
-            // Ví dụ: "[FILE]filename.txt|1024|id" -> lấy filename, size và id
-            String fileInfo = content.substring(6); // bỏ "[FILE]"
-            String[] parts = fileInfo.split("\\|",3);
-            System.out.println("-> parse [FILE] len="+parts.length+" : "+ Arrays.toString(parts));
+            String fileInfo = content.substring(6);
+            String[] parts = fileInfo.split("\\|", 3);
 
-            if(parts.length < 3){          // thiếu key  -> bỏ qua / cảnh báo
+            if (parts.length < 3) {
                 showWarn("Định dạng FILE message thiếu key: " + content);
                 return;
             }
+
             String fileName = parts[0];
             long fileSize = Long.parseLong(parts[1]);
             String key = parts[2];
 
-            // Tạo node hiển thị file
             msgNode = createFileMessageNode(fileName, fileSize, key, isOutgoing);
-            
-            // Nếu là hình ảnh, đảm bảo yêu cầu thumbnail
+
             boolean isImage = fileName.matches("(?i).+\\.(png|jpe?g|gif)");
-            if(isImage) {
-                // Yêu cầu thumbnail từ server nếu chưa có
-                if(ServiceLocator.chat().getThumb(key) == null) {
-                    System.out.println("[UI] Yêu cầu thumbnail cho file: " + key);
-                    ServiceLocator.chat().requestThumb(key);
-                } else {
-                    System.out.println("[UI] Đã có thumbnail cho file: " + key);
-                }
+            if (isImage && ServiceLocator.chat().getThumb(key) == null) {
+                ServiceLocator.chat().requestThumb(key);
             }
         } else {
             msgNode = buildMsgNode(content, isOutgoing);
@@ -2000,6 +2006,60 @@ public class ChatController {
 
         bubbleBox.getChildren().add(messageVBox);
         messagesContainer.getChildren().add(bubbleBox);
+    }    /**
+     * Xây dựng node tin nhắn với chỉ báo trạng thái mã hóa
+     */
+    private Node buildMsgNodeWithEncryptionStatus(String content, boolean isOutgoing, boolean wasEncrypted) {
+        TextFlow flow = buildEmojiTextFlow(content);
+        flow.setMaxWidth(600);
+        flow.setLineSpacing(2);
+        flow.setStyle("-fx-font-size: 16px;");  // Tăng kích thước font chữ
+
+        // Thêm biểu tượng khóa nếu tin nhắn đã được mã hóa thành công
+        if (wasEncrypted) {
+            HBox container = new HBox(5);
+            Label lockIcon = new Label("🔒");
+            lockIcon.setStyle("-fx-text-fill: #4CAF50; -fx-font-size: 12px;");
+            container.getChildren().addAll(lockIcon, flow);
+
+            StackPane bubble = new StackPane(container);
+            bubble.setPadding(new Insets(8));
+            bubble.setStyle(isOutgoing
+                    ? "-fx-background-color:#0078fe; -fx-background-radius:8;"
+                    : "-fx-background-color:#3a3a3a; -fx-background-radius:8;");
+            return bubble;
+        }
+        // Thêm biểu tượng khóa mở nếu tin nhắn không giải mã được
+        else if (content.startsWith("DBENC:")) {
+            // Tạo text flow với nội dung "Không thể giải mã tin nhắn"
+            TextFlow errorFlow = new TextFlow();
+            Text errorText = new Text("Không thể giải mã tin nhắn. Kiểm tra cài đặt mã hóa.");
+            errorText.setFill(Color.WHITE);
+            errorText.setStyle("-fx-font-size:14px;");
+            errorFlow.getChildren().add(errorText);
+
+            HBox container = new HBox(5);
+            Label errorIcon = new Label("🔓");
+            errorIcon.setStyle("-fx-text-fill: #F44336; -fx-font-size: 12px;");
+            container.getChildren().addAll(errorIcon, errorFlow);
+
+            StackPane bubble = new StackPane(container);
+            bubble.setPadding(new Insets(8));
+            bubble.setStyle(isOutgoing
+                    ? "-fx-background-color:#0078fe; -fx-background-radius:8;"
+                    : "-fx-background-color:#3a3a3a; -fx-background-radius:8;");
+            return bubble;
+        }
+        // Tin nhắn thường không mã hóa
+        else {
+            StackPane bubble = new StackPane(flow);
+            bubble.setPadding(new Insets(8));
+            bubble.setStyle(isOutgoing
+                    ? "-fx-background-color:#0078fe; -fx-background-radius:8;"
+                    : "-fx-background-color:#3a3a3a; -fx-background-radius:8;");
+            flow.setStyle("-fx-fill:white; -fx-font-size:16;");
+            return bubble;
+        }
     }
 
     private void updateRecentChatAvatar(RecentChatCellData chat, Circle avatarCircle, Label initialLabel) {
@@ -2180,21 +2240,22 @@ public class ChatController {
     @FXML
     private void onBack() {
         try {
-            // Quay lại trang chat
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/chat.fxml"));
-            Parent root = loader.load();
-            
-            // Lấy Scene hiện tại
-            Scene scene = btnBack.getScene();
-            scene.setRoot(root);
-            
-            // Lấy controller của chat.fxml, gán username và yêu cầu cập nhật
-            ChatController chatCtrl = loader.getController();
-            chatCtrl.setCurrentUser(currentUser); // Sử dụng currentUser thay vì currentUsername
+            // Xóa kết quả tìm kiếm và trở về danh sách chat gần đây
+            Platform.runLater(() -> {
+                searchField.clear();
+                listRecentChats.setVisible(true);
+                listRecentChats.setManaged(true);
+                listSearchUsers.setVisible(false);
+                listSearchUsers.setManaged(false);
+                
+                // Ẩn nút back
+                btnBack.setVisible(false);
+                btnBack.setManaged(false);
+            });
             
             // Yêu cầu danh sách user online mới từ server
             ServiceLocator.chat().getClient().requestUserList();
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
             showError("Không thể quay lại trang chat", e);
         }
@@ -2638,77 +2699,6 @@ public class ChatController {
             btnCreateGroup.setGraphicTextGap(8);
         }
     }
-    public void displayMessageWithEncryptionStatus(String from, String content, boolean isOutgoing,
-                                                   LocalDateTime sentTime, boolean wasEncrypted) {
-        HBox bubbleBox = new HBox(5);
-        bubbleBox.setPrefWidth(Double.MAX_VALUE);
-        bubbleBox.setAlignment(isOutgoing ? Pos.CENTER_RIGHT : Pos.CENTER_LEFT);
-
-        VBox messageVBox = new VBox(2);
-
-        if (!isOutgoing) {
-            Label fromLabel = new Label(from);
-            fromLabel.setStyle("-fx-text-fill:#b0b0b0; -fx-font-size:10;");
-            messageVBox.getChildren().add(fromLabel);
-        }
-
-        // Kiểm tra nếu là tin nhắn file
-        boolean isFileMessage = content.startsWith("[FILE]");
-
-        Node msgNode;
-        if (isFileMessage) {
-            // Xử lý tin nhắn file
-            String fileInfo = content.substring(6);
-            String[] parts = fileInfo.split("\\|", 3);
-
-            if (parts.length < 3) {
-                showWarn("Định dạng FILE message thiếu key: " + content);
-                return;
-            }
-
-            String fileName = parts[0];
-            long fileSize = Long.parseLong(parts[1]);
-            String key = parts[2];
-
-            msgNode = createFileMessageNode(fileName, fileSize, key, isOutgoing);
-
-            boolean isImage = fileName.matches("(?i).+\\.(png|jpe?g|gif)");
-            if (isImage && ServiceLocator.chat().getThumb(key) == null) {
-                ServiceLocator.chat().requestThumb(key);
-            }
-        } else {
-            // Tạo node tin nhắn thường
-            msgNode = buildMsgNode(content, isOutgoing);
-
-            // Nếu tin nhắn đã được mã hóa, thêm biểu tượng khóa
-            if (wasEncrypted) {
-                HBox msgWithIcon = new HBox(5);
-
-                // Biểu tượng khóa
-                Label lockIcon = new Label("🔒");
-                lockIcon.setStyle("-fx-text-fill: #00cc44; -fx-font-size: 12px;");
-
-                // Thêm biểu tượng và nội dung tin nhắn
-                msgWithIcon.getChildren().addAll(lockIcon, msgNode);
-                msgWithIcon.setAlignment(Pos.CENTER_LEFT);
-
-                // Sử dụng container mới
-                msgNode = msgWithIcon;
-            }
-        }
-
-        messageVBox.getChildren().add(msgNode);
-
-        if (sentTime != null) {
-            String timeText = sentTime.format(DateTimeFormatter.ofPattern("HH:mm"));
-            Label timeLabel = new Label(timeText);
-            timeLabel.setStyle("-fx-text-fill:#999999; -fx-font-size:10;");
-            messageVBox.getChildren().add(timeLabel);
-        }
-
-        bubbleBox.getChildren().add(messageVBox);
-        messagesContainer.getChildren().add(bubbleBox);
-    }
     /**
      * Kiểm tra xem target hiện tại có phải là nhóm không
      */
@@ -2744,266 +2734,213 @@ public class ChatController {
     /**
      * Mở dialog cài đặt mã hóa cho Global Chat
      */
-    private void openGlobalEncryptionSettings() {
-        // Tạo dialog
-        Dialog<ButtonType> dialog = new Dialog<>();
-        dialog.setTitle("Cài đặt mã hóa - Global Chat");
-        dialog.setHeaderText("Cài đặt mã hóa tin nhắn cho Global Chat");
-
-        // Tạo nút đóng
-        ButtonType closeButtonType = new ButtonType("Đóng", ButtonBar.ButtonData.OK_DONE);
-        dialog.getDialogPane().getButtonTypes().add(closeButtonType);
-
-        // Tạo grid layout
-        GridPane grid = new GridPane();
-        grid.setHgap(10);
-        grid.setVgap(10);
-        grid.setPadding(new Insets(20, 150, 10, 10));
-
-        // Tạo checkbox bật/tắt mã hóa
-        CheckBox enableEncryptionCheckbox = new CheckBox("Bật mã hóa tin nhắn");
-        boolean isEnabled = ConversationKeyManager.getInstance().isGlobalChatEncryptionEnabled();
-        enableEncryptionCheckbox.setSelected(isEnabled);
-
-        // Tạo trường nhập khóa
-        TextField keyField = new TextField();
-        keyField.setText(ConversationKeyManager.getInstance().getKey(ConversationKeyManager.GLOBAL_CHAT_ID));
-        keyField.setPromptText("Nhập khóa mã hóa (ít nhất 16 ký tự)");
-        keyField.setPrefWidth(300);
-        keyField.setDisable(!isEnabled);
-
-        // Theo dõi trạng thái checkbox
-        enableEncryptionCheckbox.selectedProperty().addListener((obs, oldVal, newVal) -> {
-            keyField.setDisable(!newVal);
-
-            // Nếu bật mã hóa mà không có khóa, tự động tạo khóa
-            if (newVal && (keyField.getText() == null || keyField.getText().isEmpty())) {
-                String key = ConversationKeyManager.getInstance().generateRandomKey(ConversationKeyManager.GLOBAL_CHAT_ID);
-                keyField.setText(key);
-            }
-        });
-
-        // Nút tạo khóa ngẫu nhiên
-        Button generateKeyButton = new Button("Tạo khóa ngẫu nhiên");
-        generateKeyButton.setOnAction(e -> {
-            String key = ConversationKeyManager.getInstance().generateRandomKey(ConversationKeyManager.GLOBAL_CHAT_ID);
-            keyField.setText(key);
-        });
-
-        // Nút sao chép khóa vào clipboard
-        Button copyKeyButton = new Button("Sao chép khóa");
-        copyKeyButton.setOnAction(e -> {
-            javafx.scene.input.Clipboard clipboard = javafx.scene.input.Clipboard.getSystemClipboard();
-            javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
-            content.putString(keyField.getText());
-            clipboard.setContent(content);
-
-            // Hiển thị thông báo
-            Tooltip tooltip = new Tooltip("Đã sao chép vào clipboard!");
-            tooltip.setStyle("-fx-font-size: 12px; -fx-background-color: #4CAF50; -fx-text-fill: white;");
-            tooltip.show(copyKeyButton,
-                    copyKeyButton.localToScreen(copyKeyButton.getBoundsInLocal()).getMinX(),
-                    copyKeyButton.localToScreen(copyKeyButton.getBoundsInLocal()).getMaxY());
-
-            // Tự động ẩn sau 2 giây
-            PauseTransition delay = new PauseTransition(javafx.util.Duration.seconds(2));
-            delay.setOnFinished(evt -> tooltip.hide());
-            delay.play();
-        });
-
-        // Nút lưu cài đặt
-        Button saveButton = new Button("Lưu cài đặt");
-        saveButton.setDefaultButton(true);
-        saveButton.setOnAction(e -> {
-            boolean enableEncryption = enableEncryptionCheckbox.isSelected();
-            String key = keyField.getText();
-
-            // Kiểm tra key hợp lệ nếu bật mã hóa
-            if (enableEncryption) {
-                if (key == null || key.length() < 16) {
-                    Alert alert = new Alert(Alert.AlertType.WARNING);
-                    alert.setTitle("Cảnh báo");
-                    alert.setHeaderText(null);
-                    alert.setContentText("Khóa mã hóa phải có ít nhất 16 ký tự để đảm bảo an toàn.");
-                    alert.showAndWait();
-                    return;
-                }
-
-                // Lưu key và bật mã hóa
-                ConversationKeyManager.getInstance().setKey(ConversationKeyManager.GLOBAL_CHAT_ID, key);
-                ConversationKeyManager.getInstance().setGlobalChatEncryptionEnabled(true);
-            } else {
-                // Tắt mã hóa
-                ConversationKeyManager.getInstance().setGlobalChatEncryptionEnabled(false);
-            }
-
-            // Hiển thị thông báo thành công
-            Alert alert = new Alert(Alert.AlertType.INFORMATION);
-            alert.setTitle("Thành công");
-            alert.setHeaderText(null);
-            alert.setContentText("Đã lưu cài đặt mã hóa cho Global Chat thành công!");
-            alert.showAndWait();
-
-            // Cập nhật hiển thị trạng thái mã hóa
-            updateGlobalEncryptionStatusDisplay();
-        });
-
-        // Thêm các thành phần vào grid
-        grid.add(new Label("Trạng thái:"), 0, 0);
-        grid.add(enableEncryptionCheckbox, 1, 0);
-
-        grid.add(new Label("Khóa mã hóa:"), 0, 1);
-        grid.add(keyField, 1, 1);
-
-        HBox buttonBox = new HBox(10);
-        buttonBox.setAlignment(Pos.CENTER_RIGHT);
-        buttonBox.getChildren().addAll(generateKeyButton, copyKeyButton, saveButton);
-        grid.add(buttonBox, 1, 2);
-
-        // Thêm mô tả
-        VBox content = new VBox(15);
-        content.getChildren().add(grid);
-
-        TextArea infoArea = new TextArea(
-                "Lưu ý về mã hóa tin nhắn Global Chat:\n\n" +
-                        "- Mã hóa sẽ chỉ áp dụng cho tin nhắn văn bản, không áp dụng cho file.\n" +
-                        "- Tất cả người tham gia Global Chat phải có cùng khóa để đọc được tin nhắn.\n" +
-                        "- Khóa nên có độ dài ít nhất 16 ký tự để đảm bảo an toàn.\n" +
-                        "- Việc mã hóa sẽ chỉ áp dụng cho tin nhắn mới, không áp dụng cho tin nhắn cũ.\n" +
-                        "- Hãy sao chép và chia sẻ khóa này qua kênh an toàn khác với mọi người."
-        );
-        infoArea.setEditable(false);
-        infoArea.setWrapText(true);
-        infoArea.setPrefHeight(120);
-        infoArea.setStyle("-fx-control-inner-background: #f8f8f8;");
-
-        content.getChildren().add(infoArea);
-        dialog.getDialogPane().setContent(content);
-
-        // Đặt kích thước cho dialog
-        dialog.getDialogPane().setPrefSize(550, 400);
-
-        // Hiển thị dialog
-        dialog.showAndWait();
-    }
-    private void addGlobalEncryptionButton() {
-        // Tìm HBox header trong vùng chat
-        HBox chatHeader = (HBox) chatTitleLabel.getParent();
-
-        // Tạo nút mã hóa
-        Button btnEncryption = new Button();
-        btnEncryption.setId("btnGlobalEncryption");
-        btnEncryption.getStyleClass().add("icon-btn");
-
-        // Tạo icon cho nút
-        FontIcon encryptionIcon = new FontIcon("fas-lock");
-        encryptionIcon.setIconColor(Color.WHITE);
-        encryptionIcon.setIconSize(16);
-        btnEncryption.setGraphic(encryptionIcon);
-        btnEncryption.setTooltip(new Tooltip("Cài đặt mã hóa Global Chat"));
-
-        // Thêm region spacer để đẩy nút về bên phải
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-
-        // Tìm vị trí để thêm nút
-        boolean alreadyExists = false;
-        for (Node node : chatHeader.getChildren()) {
-            if (node.getId() != null && node.getId().equals("btnGlobalEncryption")) {
-                alreadyExists = true;
-                break;
-            }
-        }
-
-        // Thêm nút nếu chưa tồn tại
-        if (!alreadyExists) {
-            // Kiểm tra xem đã có spacer chưa
-            boolean hasSpacerBefore = false;
-            for (Node node : chatHeader.getChildren()) {
-                if (node instanceof Region && HBox.getHgrow(node) == Priority.ALWAYS) {
-                    hasSpacerBefore = true;
-                    break;
-                }
-            }
-
-            if (!hasSpacerBefore) {
-                chatHeader.getChildren().add(chatHeader.getChildren().size() - 1, spacer);
-            }
-
-            chatHeader.getChildren().add(chatHeader.getChildren().size() - 1, btnEncryption);
-        }
-
-        // Thêm sự kiện click cho nút
-        btnEncryption.setOnAction(event -> openGlobalEncryptionSettings());
-
-        // Cập nhật hiển thị trạng thái mã hóa
-        updateGlobalEncryptionStatusDisplay();
-    }
+//    private void openGlobalEncryptionSettings() {
+//        // Tạo dialog
+//        Dialog<ButtonType> dialog = new Dialog<>();
+//        dialog.setTitle("Cài đặt mã hóa - Global Chat");
+//        dialog.setHeaderText("Cài đặt mã hóa tin nhắn cho Global Chat");
+//
+//        // Tạo nút đóng
+//        ButtonType closeButtonType = new ButtonType("Đóng", ButtonBar.ButtonData.OK_DONE);
+//        dialog.getDialogPane().getButtonTypes().add(closeButtonType);
+//
+//        // Tạo grid layout
+//        GridPane grid = new GridPane();
+//        grid.setHgap(10);
+//        grid.setVgap(10);
+//        grid.setPadding(new Insets(20, 150, 10, 10));
+//
+//        // Tạo checkbox bật/tắt mã hóa
+//        CheckBox enableEncryptionCheckbox = new CheckBox("Bật mã hóa tin nhắn");
+//        boolean isEnabled = ConversationKeyManager.getInstance().isGlobalChatEncryptionEnabled();
+//        enableEncryptionCheckbox.setSelected(isEnabled);
+//
+//        // Tạo trường nhập khóa
+//        TextField keyField = new TextField();
+//        keyField.setText(ConversationKeyManager.getInstance().getKey(ConversationKeyManager.GLOBAL_CHAT_ID));
+//        keyField.setPromptText("Nhập khóa mã hóa (ít nhất 16 ký tự)");
+//        keyField.setPrefWidth(300);
+//        keyField.setDisable(!isEnabled);
+//
+//        // Theo dõi trạng thái checkbox
+//        enableEncryptionCheckbox.selectedProperty().addListener((obs, oldVal, newVal) -> {
+//            keyField.setDisable(!newVal);
+//
+//            // Nếu bật mã hóa mà không có khóa, tự động tạo khóa
+//            if (newVal && (keyField.getText() == null || keyField.getText().isEmpty())) {
+//                String key = ConversationKeyManager.getInstance().generateRandomKey(ConversationKeyManager.GLOBAL_CHAT_ID);
+//                keyField.setText(key);
+//            }
+//        });
+//
+//        // Nút tạo khóa ngẫu nhiên
+//        Button generateKeyButton = new Button("Tạo khóa ngẫu nhiên");
+//        generateKeyButton.setOnAction(e -> {
+//            String key = ConversationKeyManager.getInstance().generateRandomKey(ConversationKeyManager.GLOBAL_CHAT_ID);
+//            keyField.setText(key);
+//        });
+//
+//        // Nút sao chép khóa vào clipboard
+//        Button copyKeyButton = new Button("Sao chép khóa");
+//        copyKeyButton.setOnAction(e -> {
+//            javafx.scene.input.Clipboard clipboard = javafx.scene.input.Clipboard.getSystemClipboard();
+//            javafx.scene.input.ClipboardContent content = new javafx.scene.input.ClipboardContent();
+//            content.putString(keyField.getText());
+//            clipboard.setContent(content);
+//
+//            // Hiển thị thông báo
+//            Tooltip tooltip = new Tooltip("Đã sao chép vào clipboard!");
+//            tooltip.setStyle("-fx-font-size: 12px; -fx-background-color: #4CAF50; -fx-text-fill: white;");
+//            tooltip.show(copyKeyButton,
+//                    copyKeyButton.localToScreen(copyKeyButton.getBoundsInLocal()).getMinX(),
+//                    copyKeyButton.localToScreen(copyKeyButton.getBoundsInLocal()).getMaxY());
+//
+//            // Tự động ẩn sau 2 giây
+//            PauseTransition delay = new PauseTransition(javafx.util.Duration.seconds(2));
+//            delay.setOnFinished(evt -> tooltip.hide());
+//            delay.play();
+//        });
+//
+//        // Nút lưu cài đặt
+//        Button saveButton = new Button("Lưu cài đặt");
+//        saveButton.setDefaultButton(true);
+//        saveButton.setOnAction(e -> {
+//            boolean enableEncryption = enableEncryptionCheckbox.isSelected();
+//            String key = keyField.getText();
+//
+//            // Kiểm tra key hợp lệ nếu bật mã hóa
+//            if (enableEncryption) {
+//                if (key == null || key.length() < 16) {
+//                    Alert alert = new Alert(Alert.AlertType.WARNING);
+//                    alert.setTitle("Cảnh báo");
+//                    alert.setHeaderText(null);
+//                    alert.setContentText("Khóa mã hóa phải có ít nhất 16 ký tự để đảm bảo an toàn.");
+//                    alert.showAndWait();
+//                    return;
+//                }
+//
+//                // Lưu key và bật mã hóa
+//                ConversationKeyManager.getInstance().setKey(ConversationKeyManager.GLOBAL_CHAT_ID, key);
+//                ConversationKeyManager.getInstance().setGlobalChatEncryptionEnabled(true);
+//            } else {
+//                // Tắt mã hóa
+//                ConversationKeyManager.getInstance().setGlobalChatEncryptionEnabled(false);
+//            }
+//
+//            // Hiển thị thông báo thành công
+//            Alert alert = new Alert(Alert.AlertType.INFORMATION);
+//            alert.setTitle("Thành công");
+//            alert.setHeaderText(null);
+//            alert.setContentText("Đã lưu cài đặt mã hóa cho Global Chat thành công!");
+//            alert.showAndWait();
+//
+//            // Cập nhật hiển thị trạng thái mã hóa
+//            updateGlobalEncryptionStatusDisplay();
+//        });
+//
+//        // Thêm các thành phần vào grid
+//        grid.add(new Label("Trạng thái:"), 0, 0);
+//        grid.add(enableEncryptionCheckbox, 1, 0);
+//
+//        grid.add(new Label("Khóa mã hóa:"), 0, 1);
+//        grid.add(keyField, 1, 1);
+//
+//        HBox buttonBox = new HBox(10);
+//        buttonBox.setAlignment(Pos.CENTER_RIGHT);
+//        buttonBox.getChildren().addAll(generateKeyButton, copyKeyButton, saveButton);
+//        grid.add(buttonBox, 1, 2);
+//
+//        // Thêm mô tả
+//        VBox content = new VBox(15);
+//        content.getChildren().add(grid);
+//
+//        TextArea infoArea = new TextArea(
+//                "Lưu ý về mã hóa tin nhắn Global Chat:\n\n" +
+//                        "- Mã hóa sẽ chỉ áp dụng cho tin nhắn văn bản, không áp dụng cho file.\n" +
+//                        "- Tất cả người tham gia Global Chat phải có cùng khóa để đọc được tin nhắn.\n" +
+//                        "- Khóa nên có độ dài ít nhất 16 ký tự để đảm bảo an toàn.\n" +
+//                        "- Việc mã hóa sẽ chỉ áp dụng cho tin nhắn mới, không áp dụng cho tin nhắn cũ.\n" +
+//                        "- Hãy sao chép và chia sẻ khóa này qua kênh an toàn khác với mọi người."
+//        );
+//        infoArea.setEditable(false);
+//        infoArea.setWrapText(true);
+//        infoArea.setPrefHeight(120);
+//        infoArea.setStyle("-fx-control-inner-background: #f8f8f8;");
+//
+//        content.getChildren().add(infoArea);
+//        dialog.getDialogPane().setContent(content);
+//
+//        // Đặt kích thước cho dialog
+//        dialog.getDialogPane().setPrefSize(550, 400);
+//
+//        // Hiển thị dialog
+//        dialog.showAndWait();
+//    }
 
     /**
      * Cập nhật hiển thị trạng thái mã hóa cho Global Chat
      */
-    private void updateGlobalEncryptionStatusDisplay() {
-        if (!"Global".equals(currentTarget)) {
-            return; // Chỉ cập nhật khi đang ở Global Chat
-        }
-
-        // Tìm HBox header trong vùng chat
-        HBox chatHeader = (HBox) chatTitleLabel.getParent();
-
-        // Tìm và xóa label trạng thái mã hóa cũ nếu có
-        chatHeader.getChildren().removeIf(node -> node.getId() != null && node.getId().equals("global-encryption-status"));
-
-        // Kiểm tra trạng thái mã hóa
-        if (ConversationKeyManager.getInstance().isGlobalChatEncryptionEnabled()) {
-            // Tạo label hiển thị trạng thái mã hóa
-            Label encryptionStatus = new Label("🔒 Đã mã hóa");
-            encryptionStatus.setId("global-encryption-status");
-            encryptionStatus.setStyle("-fx-text-fill: #4CAF50; -fx-font-style: italic; -fx-font-size: 12px;");
-
-            // Thêm vào sau title
-            int titleIndex = chatHeader.getChildren().indexOf(chatTitleLabel);
-            if (titleIndex >= 0) {
-                chatHeader.getChildren().add(titleIndex + 1, encryptionStatus);
-            }
-
-            // Cập nhật icon nút mã hóa
-            for (Node node : chatHeader.getChildren()) {
-                if (node.getId() != null && node.getId().equals("btnGlobalEncryption") && node instanceof Button) {
-                    Button btn = (Button) node;
-                    FontIcon lockIcon = new FontIcon("fas-lock");
-                    lockIcon.setIconColor(Color.rgb(76, 175, 80)); // Màu xanh
-                    lockIcon.setIconSize(16);
-                    btn.setGraphic(lockIcon);
-                    break;
-                }
-            }
-        } else {
-            // Cập nhật icon nút mã hóa thành khóa mở
-            for (Node node : chatHeader.getChildren()) {
-                if (node.getId() != null && node.getId().equals("btnGlobalEncryption") && node instanceof Button) {
-                    Button btn = (Button) node;
-                    FontIcon lockIcon = new FontIcon("fas-lock-open");
-                    lockIcon.setIconColor(Color.WHITE);
-                    lockIcon.setIconSize(16);
-                    btn.setGraphic(lockIcon);
-                    break;
-                }
-            }
-        }
-    }
+//    private void updateGlobalEncryptionStatusDisplay() {
+//        if (!"Global".equals(currentTarget)) {
+//            return; // Chỉ cập nhật khi đang ở Global Chat
+//        }
+//
+//        // Tìm HBox header trong vùng chat
+//        HBox chatHeader = (HBox) chatTitleLabel.getParent();
+//
+//        // Tìm và xóa label trạng thái mã hóa cũ nếu có
+//        chatHeader.getChildren().removeIf(node -> node.getId() != null && node.getId().equals("global-encryption-status"));
+//
+//        // Kiểm tra trạng thái mã hóa
+//        if (ConversationKeyManager.getInstance().isGlobalChatEncryptionEnabled()) {
+//            // Tạo label hiển thị trạng thái mã hóa
+//            Label encryptionStatus = new Label("🔒 Đã mã hóa");
+//            encryptionStatus.setId("global-encryption-status");
+//            encryptionStatus.setStyle("-fx-text-fill: #4CAF50; -fx-font-style: italic; -fx-font-size: 12px;");
+//
+//            // Thêm vào sau title
+//            int titleIndex = chatHeader.getChildren().indexOf(chatTitleLabel);
+//            if (titleIndex >= 0) {
+//                chatHeader.getChildren().add(titleIndex + 1, encryptionStatus);
+//            }
+//
+//            // Cập nhật icon nút mã hóa
+//            for (Node node : chatHeader.getChildren()) {
+//                if (node.getId() != null && node.getId().equals("btnGlobalEncryption") && node instanceof Button) {
+//                    Button btn = (Button) node;
+//                    FontIcon lockIcon = new FontIcon("fas-lock");
+//                    lockIcon.setIconColor(Color.rgb(76, 175, 80)); // Màu xanh
+//                    lockIcon.setIconSize(16);
+//                    btn.setGraphic(lockIcon);
+//                    break;
+//                }
+//            }
+//        } else {
+//            // Cập nhật icon nút mã hóa thành khóa mở
+//            for (Node node : chatHeader.getChildren()) {
+//                if (node.getId() != null && node.getId().equals("btnGlobalEncryption") && node instanceof Button) {
+//                    Button btn = (Button) node;
+//                    FontIcon lockIcon = new FontIcon("fas-lock-open");
+//                    lockIcon.setIconColor(Color.WHITE);
+//                    lockIcon.setIconSize(16);
+//                    btn.setGraphic(lockIcon);
+//                    break;
+//                }
+//            }
+//        }
+//    }
     /**
      * Sửa đổi phương thức setupUIComponents để thêm nút mã hóa cho Global Chat
      */
-    private void updateUIForGlobalChat() {
-        if ("Global".equals(currentTarget)) {
-            addGlobalEncryptionButton();
-        }
-    }
+//    private void updateUIForGlobalChat() {
+//        if ("Global".equals(currentTarget)) {
+//            addGlobalEncryptionButton();
+//        }
+//    }
     private void handleChatSelection(String targetName) {
         // Cập nhật UI khi chuyển sang Global Chat
         if ("Global".equals(targetName)) {
-            updateUIForGlobalChat();
+//            updateUIForGlobalChat();
         } else {
             // Xóa hiển thị trạng thái mã hóa Global khi chuyển sang chat khác
             HBox chatHeader = (HBox) chatTitleLabel.getParent();
@@ -3012,77 +2949,113 @@ public class ChatController {
                             (node.getId().equals("global-encryption-status") || node.getId().equals("btnGlobalEncryption")));
         }
     }
-    private boolean isAdmin() {
-        System.out.println("[DEBUG] Checking if user is admin: " + currentUser);
-        if (currentUser == null) return false;
+//    private boolean isAdmin() {
+//        System.out.println("[DEBUG] Checking if user is admin: " + currentUser);
+//        if (currentUser == null) return false;
+//
+//        // Thêm log để debug
+//        System.out.println("[DEBUG] Checking admin status for: '" + currentUser + "'");
+//
+//        // Chuyển tất cả về chữ thường để so sánh
+//        String currentUserLower = currentUser.toLowerCase().trim();
+//        String[] adminUsers = {"an", "bảo", "bảnh"};
+//
+//        for (String adminUser : adminUsers) {
+//            if (adminUser.equals(currentUserLower)) {
+//                System.out.println("[DEBUG] User is admin: " + currentUser);
+//                return true;
+//            }
+//        }
+//        return false;
+//    }
 
-        // Thêm log để debug
-        System.out.println("[DEBUG] Checking admin status for: '" + currentUser + "'");
-
-        // Chuyển tất cả về chữ thường để so sánh
-        String currentUserLower = currentUser.toLowerCase().trim();
-        String[] adminUsers = {"an", "bảo", "bảnh"};
-
-        for (String adminUser : adminUsers) {
-            if (adminUser.equals(currentUserLower)) {
-                System.out.println("[DEBUG] User is admin: " + currentUser);
-                return true;
-            }
+//    @FXML
+//    private void openAdminPanel() {
+//        if (!isAdmin()) {
+//            showWarn("Bạn không có quyền truy cập vào phần quản trị hệ thống.");
+//            return;
+//        }
+//
+//        try {
+//            // Nạp admin.fxml
+//            FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/admin.fxml"));
+//            Parent root = loader.load();
+//
+//            // Lấy Scene hiện tại
+//            Scene scene = btnSettings.getScene();
+//            scene.setRoot(root);
+//
+//            // Lấy controller của admin.fxml, gán username
+//            AdminController adminCtrl = loader.getController();
+//            adminCtrl.setAdminUser(currentUser);
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//            showError("Không thể mở trang quản trị", e);
+//        }
+//    }
+//    private void setupAdminMenu() {
+//        // Thêm log để debug
+//        System.out.println("[DEBUG] Setting up admin menu, isAdmin: " + isAdmin());
+//
+//        if (isAdmin()) {
+//            System.out.println("[DEBUG] User is admin, creating admin menu");
+//
+//            // Tạo menu cho admin
+//            ContextMenu adminMenu = new ContextMenu();
+//            MenuItem adminItem = new MenuItem("Quản trị hệ thống");
+//            adminItem.setOnAction(e -> openAdminPanel());
+//            adminMenu.getItems().add(adminItem);
+//
+//            // Thêm nút gọi menu thay vì dùng chuột phải
+//            Button adminButton = new Button("Admin");
+//            adminButton.setStyle("-fx-background-color: #9C27B0; -fx-text-fill: white;");
+//            adminButton.setOnAction(e -> openAdminPanel());
+//
+//            // Tìm hbox chứa nút settings
+//            if (btnSettings.getParent() instanceof HBox) {
+//                HBox headerBox = (HBox) btnSettings.getParent();
+//                // Thêm nút admin vào trước nút settings
+//                headerBox.getChildren().add(headerBox.getChildren().indexOf(btnSettings), adminButton);
+//            }
+//        }
+//    }
+    public void refreshAfterFriendshipChange() {
+        // Request updated conversation list
+        if (clientConnection != null) {
+            clientConnection.requestUserList();
+            // Also update recent chats
+            loadRecentChats();
         }
-        return false;
     }
 
     @FXML
-    private void openAdminPanel() {
-        if (!isAdmin()) {
-            showWarn("Bạn không có quyền truy cập vào phần quản trị hệ thống.");
-            return;
-        }
-
+    private void onLogout() {
         try {
-            // Nạp admin.fxml
-            FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/admin.fxml"));
-            Parent root = loader.load();
+            // Hiển thị hộp thoại xác nhận đăng xuất
+            Alert alert = new Alert(Alert.AlertType.CONFIRMATION);
+            alert.setTitle("Xác nhận đăng xuất");
+            alert.setHeaderText("Bạn có chắc chắn muốn đăng xuất không?");
+            alert.setContentText("Tất cả tin nhắn chưa gửi sẽ bị mất.");
 
-            // Lấy Scene hiện tại
-            Scene scene = btnSettings.getScene();
-            scene.setRoot(root);
+            Optional<ButtonType> result = alert.showAndWait();
+            if (result.isPresent() && result.get() == ButtonType.OK) {
+                // Đóng kết nối với server
+                if (clientConnection != null) {
+                    clientConnection.close();
+                }
 
-            // Lấy controller của admin.fxml, gán username
-            AdminController adminCtrl = loader.getController();
-            adminCtrl.setAdminUser(currentUser);
-        } catch (IOException e) {
-            e.printStackTrace();
-            showError("Không thể mở trang quản trị", e);
-        }
-    }
-    private void setupAdminMenu() {
-        // Thêm log để debug
-        System.out.println("[DEBUG] Setting up admin menu, isAdmin: " + isAdmin());
-
-        if (isAdmin()) {
-            System.out.println("[DEBUG] User is admin, creating admin menu");
-
-            // Tạo menu cho admin
-            ContextMenu adminMenu = new ContextMenu();
-            MenuItem adminItem = new MenuItem("Quản trị hệ thống");
-            adminItem.setOnAction(e -> openAdminPanel());
-            adminMenu.getItems().add(adminItem);
-
-            // Thêm nút gọi menu thay vì dùng chuột phải
-            Button adminButton = new Button("Admin");
-            adminButton.setStyle("-fx-background-color: #9C27B0; -fx-text-fill: white;");
-            adminButton.setOnAction(e -> openAdminPanel());
-
-            // Tìm hbox chứa nút settings
-            if (btnSettings.getParent() instanceof HBox) {
-                HBox headerBox = (HBox) btnSettings.getParent();
-                // Thêm nút admin vào trước nút settings
-                headerBox.getChildren().add(headerBox.getChildren().indexOf(btnSettings), adminButton);
+                // Chuyển sang màn hình đăng nhập
+                FXMLLoader loader = new FXMLLoader(getClass().getResource("/fxml/login.fxml"));
+                Parent root = loader.load();
+                
+                // Lấy scene hiện tại và thay đổi root
+                Scene scene = btnLogout.getScene();
+                scene.setRoot(root);
             }
+        } catch (Exception e) {
+            e.printStackTrace();
+            showError("Không thể đăng xuất", e);
         }
     }
-
-
 
 }

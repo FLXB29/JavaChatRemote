@@ -4,8 +4,7 @@ import app.ServiceLocator;
 import app.controller.ChatController;
 import app.model.Conversation;
 import app.model.MessageDTO;
-import app.util.ConversationKeyManager;
-import app.util.EncryptionUtil;
+//import app.util.ConversationKeyManager;
 import javafx.application.Platform;
 import javafx.scene.control.Alert;
 import javafx.scene.control.ButtonBar;
@@ -50,44 +49,14 @@ public class ChatService {
         client = new ClientConnection();
         client.connect();
 
-        // Lắng nghe callback khi nhận tin nhắn
         client.setOnTextReceived((from, text) -> {
-            // Kiểm tra xem tin nhắn có được mã hóa không
-            if (EncryptionUtil.isEncrypted(text) &&
-                    ConversationKeyManager.getInstance().isGlobalChatEncryptionEnabled()) {
-                // Giải mã tin nhắn
-                String key = ConversationKeyManager.getInstance().getKey(ConversationKeyManager.GLOBAL_CHAT_ID);
-                try {
-                    String decryptedText = EncryptionUtil.decrypt(text, key);
-
-                    // Cập nhật UI với tin nhắn đã giải mã
-                    if (chatUI != null) {
-                        Platform.runLater(() -> {
-                            boolean isOutgoing = from.equals(chatUI.getCurrentUser());
-                            // Truyền thêm tham số wasEncrypted=true để hiển thị biểu tượng khóa
-                            chatUI.displayMessageWithEncryptionStatus(from, decryptedText, isOutgoing,
-                                    LocalDateTime.now(), true);
-                        });
-                    }
-                } catch (Exception e) {
-                    // Không thể giải mã
-                    System.err.println("Không thể giải mã tin nhắn Global: " + e.getMessage());
-                    if (chatUI != null) {
-                        Platform.runLater(() -> {
-                            boolean isOutgoing = from.equals(chatUI.getCurrentUser());
-                            chatUI.displayMessage(from, "[Không thể giải mã] " + text,
-                                    isOutgoing, LocalDateTime.now());
-                        });
-                    }
-                }
-            } else {
-                // Tin nhắn thường
-                if (chatUI != null) {
-                    Platform.runLater(() -> {
-                        boolean isOutgoing = from.equals(chatUI.getCurrentUser());
-                        chatUI.displayMessage(from, text, isOutgoing, LocalDateTime.now());
-                    });
-                }
+            // Tin nhắn đã được server giải mã trước khi gửi xuống
+            // Chỉ cần hiển thị bình thường
+            if (chatUI != null) {
+                Platform.runLater(() -> {
+                    boolean isOutgoing = from.equals(chatUI.getCurrentUser());
+                    chatUI.displayMessage(from, text, isOutgoing, LocalDateTime.now());
+                });
             }
         });
 
@@ -154,56 +123,47 @@ public class ChatService {
     /**
      * Gửi tin nhắn với hỗ trợ mã hóa
      */
-    public void sendMessage(String fromUser, String text) {
-        if ("Global".equals(chatUI.getCurrentTarget())) {
-            // Kiểm tra xem mã hóa có bật cho Global Chat không
-            if (ConversationKeyManager.getInstance().isGlobalChatEncryptionEnabled()) {
-                // Lấy khóa mã hóa cho Global Chat
-                String key = ConversationKeyManager.getInstance().getKey(ConversationKeyManager.GLOBAL_CHAT_ID);
-                // Mã hóa tin nhắn
-                String encryptedText = EncryptionUtil.encrypt(text, key);
-                // Gửi tin nhắn đã mã hóa
-                client.sendText(encryptedText);
-            } else {
-                // Gửi tin nhắn thường
-                client.sendText(text);
-            }
-        } else if (chatUI.isGroupTarget(chatUI.getCurrentTarget())) {
-            // Xử lý tin nhắn nhóm
-            long groupId = chatUI.getGroupId(chatUI.getCurrentTarget());
-            // Kiểm tra xem mã hóa có bật cho nhóm này không
-            if (ConversationKeyManager.getInstance().isEncryptionEnabled(groupId)) {
-                // Lấy khóa mã hóa
-                String key = ConversationKeyManager.getInstance().getKey(groupId);
-                // Mã hóa tin nhắn
-                String encryptedText = EncryptionUtil.encrypt(text, key);
-                // Gửi tin nhắn đã mã hóa
-                client.sendGroup(groupId, encryptedText);
-            } else {
-                // Gửi tin nhắn thường
-                client.sendGroup(groupId, text);
-            }
-        } else {
-            // Xử lý tin nhắn riêng tư
+    public void sendMessage(String fromUser, String content) {
+        try {
+            // Kiểm tra xem đang chat ở đâu
             String target = chatUI.getCurrentTarget();
 
-            // Tìm conversation
-            Conversation conv = chatUI.findPrivateConversation(fromUser, target);
-
-            if (conv != null && ConversationKeyManager.getInstance().isEncryptionEnabled(conv.getId())) {
-                // Lấy khóa mã hóa
-                String key = ConversationKeyManager.getInstance().getKey(conv.getId());
-                // Mã hóa tin nhắn
-                String encryptedText = EncryptionUtil.encrypt(text, key);
-                // Gửi tin nhắn đã mã hóa
-                client.sendPrivate(target, encryptedText);
+            if ("Global".equals(target)) {
+                // Chat global
+                client.sendText(content);
+            } else if (chatUI.isGroupTarget(target)) {
+                // Chat nhóm
+                long groupId = chatUI.getGroupId(target);
+                client.sendGroup(groupId, content);
             } else {
-                // Gửi tin nhắn thường
-                client.sendPrivate(target, text);
+                // Chat riêng
+                client.sendPrivate(target, content);
+                chatUI.lastPmTarget = target;
             }
+
+            // Lưu vào database với mã hóa
+            Conversation conv = null;
+            if ("Global".equals(target)) {
+                conv = ServiceLocator.conversationDAO().findByName("Global Chat");
+            } else if (chatUI.isGroupTarget(target)) {
+                long groupId = chatUI.getGroupId(target);
+                conv = ServiceLocator.conversationDAO().findById(groupId);
+            } else {
+                // Private conversation
+                conv = chatUI.findPrivateConversation(fromUser, target);
+            }
+
+            if (conv != null) {
+                // Content sẽ được mã hóa trong saveMessage
+                ServiceLocator.messageService().saveMessage(conv, fromUser, content, null);
+            }
+
+        } catch (Exception e) {
+            System.out.println("[ERROR] Không thể gửi tin nhắn: " + e.getMessage());
+            e.printStackTrace();
+            throw e;
         }
     }
-
     public void download(String id){
         client.requestFile(id);
     }
