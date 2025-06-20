@@ -16,11 +16,11 @@ public class Friendship {
     private User user2;
 
     @Enumerated(EnumType.STRING)
-    private Status status; // PENDING, ACCEPTED, BLOCKED
+    private Status status; // PENDING, ACCEPTED, BLOCKED, REJECTED
 
     private LocalDateTime createdAt = LocalDateTime.now();
 
-    public enum Status { PENDING, ACCEPTED, BLOCKED }
+    public enum Status { PENDING, ACCEPTED, BLOCKED, REJECTED }
 
     public Friendship() {}
 

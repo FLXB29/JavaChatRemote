@@ -62,4 +62,19 @@ public class ConversationDAO {
                     .uniqueResult();
         }
     }
+    public List<Conversation> findAllOfUserByType(String username, String type) {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            String hql = """
+                SELECT DISTINCT c FROM Conversation c
+                JOIN c.memberships m
+                JOIN m.user u
+                WHERE u.username = :username
+                AND c.type = :type""";
+
+            return session.createQuery(hql, Conversation.class)
+                    .setParameter("username", username)
+                    .setParameter("type", type)
+                    .getResultList();
+        }
+    }
 }

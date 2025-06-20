@@ -10,7 +10,7 @@ import app.model.User;
 import java.util.List;
 import java.util.stream.Collectors;
 
-/** Service “1 lớp duy nhất” – KHÔNG còn Impl */
+/** Service "1 lớp duy nhất" – KHÔNG còn Impl */
 public class FriendshipService {
 
     private final FriendshipDAO dao = new FriendshipDAO();
@@ -60,7 +60,7 @@ public class FriendshipService {
         Friendship f = dao.find(from, to);
         if (f == null || f.getStatus() != Friendship.Status.PENDING)
             throw new IllegalStateException("Không có lời mời hợp lệ");
-        f.setStatus(Friendship.Status.BLOCKED);
+        f.setStatus(Friendship.Status.REJECTED);
         dao.update(f);
     }
 
@@ -76,9 +76,24 @@ public class FriendshipService {
         return f == null ? null : f.getStatus();
     }
 
-    /** Lời mời gửi tới user (PENDING) */
+    /**
+     * Lấy đối tượng Friendship giữa hai người dùng
+     * @param user1 User thứ nhất
+     * @param user2 User thứ hai
+     * @return Đối tượng Friendship, hoặc null nếu không tồn tại
+     */
+    public Friendship getFriendshipBetween(User user1, User user2) {
+        return dao.find(user1, user2);
+    }
+
+    /** Lời mời gửi tới user (PENDING) - chỉ lấy lời mời mà user là người nhận */
     public List<Friendship> getPendingRequests(User u) {
         return dao.findPending(u);
+    }
+    
+    /** Lấy tất cả lời mời kết bạn liên quan đến user (cả gửi và nhận) */
+    public List<Friendship> getAllPendingRequests(User u) {
+        return dao.findAllPending(u);
     }
 
     /** Danh sách bạn bè (đã ACCEPTED) */

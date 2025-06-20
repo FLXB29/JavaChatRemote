@@ -2,6 +2,7 @@ package app.service;
 
 import app.ServiceLocator;
 import app.controller.ChatController;
+import app.controller.chat.ChatControllerRefactored;
 import app.model.Conversation;
 import app.model.MessageDTO;
 //import app.util.ConversationKeyManager;
@@ -27,10 +28,12 @@ import java.util.concurrent.ConcurrentHashMap;
  * và lắng nghe callback => hiển thị UI.
  */
 public class ChatService {
-    private ChatController chatUI;
+    private ChatController chatUI; // Giữ lại cho tương thích ngược
+    private ChatControllerRefactored chatUIRefactored; // Thêm controller mới
     private ClientConnection client;
     private final Map<String, byte[]> fileCache = new ConcurrentHashMap<>();
     private final Map<String, byte[]> thumbCache = new ConcurrentHashMap<>();
+    private final Map<String, java.util.concurrent.CompletableFuture<byte[]>> thumbFutures = new ConcurrentHashMap<>();
     private final Set<String> thumbRequested = ConcurrentHashMap.newKeySet();
 
     private final Set<String> shownFileIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
@@ -52,10 +55,50 @@ public class ChatService {
         client.setOnTextReceived((from, text) -> {
             // Tin nhắn đã được server giải mã trước khi gửi xuống
             // Chỉ cần hiển thị bình thường
-            if (chatUI != null) {
+            if (chatUIRefactored != null && chatUIRefactored.getMessageHandler() != null) {
                 Platform.runLater(() -> {
-                    boolean isOutgoing = from.equals(chatUI.getCurrentUser());
-                    chatUI.displayMessage(from, text, isOutgoing, LocalDateTime.now());
+                    // Giao cho MessageHandler xử lý tin nhắn global
+                    boolean isOutgoing = from.equals(chatUIRefactored.getCurrentUsername());
+                    
+                    // Sử dụng handleNewMessage để cập nhật RecentChat
+                    if (!isOutgoing) {
+                        chatUIRefactored.getMessageHandler().handleNewMessage(from, text);
+                    }
+                    
+                    // Hiển thị tin nhắn nếu đang ở màn hình global chat
+                    String currentTarget = chatUIRefactored.getMessageHandler().getCurrentTarget();
+                    if ("Global".equals(currentTarget)) {
+                        chatUIRefactored.getMessageHandler().displayMessage(
+                            from, text, isOutgoing, LocalDateTime.now());
+                    }
+                    
+                    // Làm mới danh sách chat gần đây
+                    chatUIRefactored.getMessageHandler().refreshRecentChats();
+                });
+            }
+        });
+
+        client.setOnPrivateMsgReceived((from, text) -> {
+            // Xử lý tin nhắn riêng tư 
+            if (chatUIRefactored != null && chatUIRefactored.getMessageHandler() != null) {
+                Platform.runLater(() -> {
+                    String currentUsername = chatUIRefactored.getCurrentUsername();
+                    boolean isOutgoing = from.equals(currentUsername);
+                    String currentTarget = chatUIRefactored.getMessageHandler().getCurrentTarget();
+                    
+                    // Nếu đang trong chat với người gửi, hiển thị tin nhắn
+                    if (from.equals(currentTarget) || currentUsername.equals(currentTarget)) {
+                        chatUIRefactored.getMessageHandler().displayMessage(
+                            from, text, isOutgoing, LocalDateTime.now());
+                    }
+                    
+                    // Xử lý tin nhắn mới
+                    if (!isOutgoing) {
+                        chatUIRefactored.getMessageHandler().handleNewMessage(from, text);
+                    }
+                    
+                    // Làm mới danh sách chat gần đây
+                    chatUIRefactored.getMessageHandler().refreshRecentChats();
                 });
             }
         });
@@ -65,10 +108,24 @@ public class ChatService {
             fileCache.put(key, data);
             String fileMsg = String.format("[FILE]%s|%d|%s", filename, data.length, key);
 
-            Platform.runLater(() -> {
-                boolean out = from.equals(chatUI.getCurrentUser());
-                chatUI.displayMessage(from, fileMsg, out, LocalDateTime.now());
-            });
+            if (chatUIRefactored != null && chatUIRefactored.getMessageHandler() != null) {
+                Platform.runLater(() -> {
+                    String currentUsername = chatUIRefactored.getCurrentUsername();
+                    boolean isOutgoing = from.equals(currentUsername);
+                    
+                    // Hiển thị tin nhắn file
+                    chatUIRefactored.getMessageHandler().displayMessage(
+                        from, fileMsg, isOutgoing, LocalDateTime.now());
+                    
+                    // Nếu không phải tin nhắn của mình, xử lý như tin nhắn mới
+                    if (!isOutgoing) {
+                        chatUIRefactored.getMessageHandler().handleNewMessage(from, fileMsg);
+                    }
+                    
+                    // Làm mới danh sách chat gần đây
+                    chatUIRefactored.getMessageHandler().refreshRecentChats();
+                });
+            }
         });
 
         client.setOnFileMeta((from, name, size, idFlag) -> {
@@ -77,12 +134,30 @@ public class ChatService {
             String flag = (parts.length == 2) ? parts[1] : "N";
 
             String msg = "[FILE]" + name + "|" + size + "|" + id;
-            Platform.runLater(() -> {
-                boolean outgoing = from.equals(chatUI.getCurrentUser());
-                chatUI.displayMessage(from, msg, outgoing, LocalDateTime.now());
-            });
+            
+            if (chatUIRefactored != null && chatUIRefactored.getMessageHandler() != null) {
+                Platform.runLater(() -> {
+                    String currentUsername = chatUIRefactored.getCurrentUsername();
+                    boolean outgoing = from.equals(currentUsername);
+                    
+                    // Chỉ hiển thị tin nhắn file nếu không phải tin nhắn của mình
+                    // Tin nhắn của mình đã được hiển thị khi gửi
+                    if (!outgoing) {
+                        // Hiển thị tin nhắn file
+                        chatUIRefactored.getMessageHandler().displayMessage(
+                            from, msg, outgoing, LocalDateTime.now());
+                        
+                        // Xử lý như tin nhắn mới
+                        chatUIRefactored.getMessageHandler().handleNewMessage(from, msg);
+                        
+                        // Làm mới danh sách chat gần đây
+                        chatUIRefactored.getMessageHandler().refreshRecentChats();
+                    }
+                });
+            }
 
-            boolean needThumb = "T".equals(flag) || from.equals(chatUI.getCurrentUser());
+            boolean needThumb = "T".equals(flag) || (chatUIRefactored != null 
+                && from.equals(chatUIRefactored.getCurrentUsername()));
             if(needThumb && !thumbCache.containsKey(id)){
                 requestThumb(id);
             }
@@ -90,8 +165,8 @@ public class ChatService {
 
         client.setOnFileThumb((id,bytes)->{
             System.out.println("[RECV_THUMB] "+id+" bytes="+bytes.length);
-            thumbCache.put(id, bytes);
-            Platform.runLater(() -> chatUI.refreshThumbnail(id));
+            // Thêm vào cache và hoàn thành CompletableFuture
+            addThumbToCache(id, bytes);
         });
 
         client.setOnFileChunk((id,seq,last,data) -> {
@@ -103,10 +178,42 @@ public class ChatService {
                 fileCache.put(id, all);
             }
         });
+        
+        // Thiết lập callback cho group message
+        client.setOnGroupMsg((groupId, from, text) -> {
+            if (chatUIRefactored != null && chatUIRefactored.getMessageHandler() != null) {
+                Platform.runLater(() -> {
+                    String currentUsername = chatUIRefactored.getCurrentUsername();
+                    boolean isOutgoing = from.equals(currentUsername);
+                    
+                    // Tìm tên nhóm từ groupId
+                    String groupName = "Group " + groupId;
+                    
+                    // Cập nhật groupMap
+                    chatUIRefactored.getMessageHandler().updateGroupMap(groupName, groupId);
+                    
+                    // Chỉ xử lý tin nhắn nhóm mới nếu không phải tin nhắn từ chính mình
+                    // Tin nhắn từ chính mình đã được xử lý khi gửi
+                    if (!isOutgoing) {
+                        chatUIRefactored.getMessageHandler().handleNewGroupMessage(groupName, from, text);
+                        
+                        // Làm mới danh sách chat gần đây
+                        chatUIRefactored.getMessageHandler().refreshRecentChats();
+                    }
+                });
+            }
+        });
     }
 
     public void bindUI(ChatController ui) {
         this.chatUI = ui;
+    }
+    
+    /**
+     * Liên kết với ChatControllerRefactored
+     */
+    public void bindRefactoredUI(ChatControllerRefactored ui) {
+        this.chatUIRefactored = ui;
     }
 
     public void login(String username) {
@@ -126,36 +233,39 @@ public class ChatService {
     public void sendMessage(String fromUser, String content) {
         try {
             // Kiểm tra xem đang chat ở đâu
-            String target = chatUI.getCurrentTarget();
+            String target = "";
+            
+            if (chatUIRefactored != null && chatUIRefactored.getMessageHandler() != null) {
+                target = chatUIRefactored.getMessageHandler().getCurrentTarget();
+                
+                if ("Global".equals(target)) {
+                    // Chat global
+                    client.sendText(content);
+                } else if (chatUIRefactored.getMessageHandler().isGroupTarget(target)) {
+                    // Chat nhóm
+                    long groupId = chatUIRefactored.getMessageHandler().getGroupId(target);
+                    client.sendGroup(groupId, content);
+                } else {
+                    // Chat riêng
+                    client.sendPrivate(target, content);
+                }
+                
+                // Lưu vào database với mã hóa
+                Conversation conv = null;
+                if ("Global".equals(target)) {
+                    conv = ServiceLocator.conversationDAO().findByName("Global Chat");
+                } else if (chatUIRefactored.getMessageHandler().isGroupTarget(target)) {
+                    long groupId = chatUIRefactored.getMessageHandler().getGroupId(target);
+                    conv = ServiceLocator.conversationDAO().findById(groupId);
+                } else {
+                    // Private conversation
+                    conv = chatUIRefactored.getMessageHandler().findPrivateConversation(fromUser, target);
+                }
 
-            if ("Global".equals(target)) {
-                // Chat global
-                client.sendText(content);
-            } else if (chatUI.isGroupTarget(target)) {
-                // Chat nhóm
-                long groupId = chatUI.getGroupId(target);
-                client.sendGroup(groupId, content);
-            } else {
-                // Chat riêng
-                client.sendPrivate(target, content);
-                chatUI.lastPmTarget = target;
-            }
-
-            // Lưu vào database với mã hóa
-            Conversation conv = null;
-            if ("Global".equals(target)) {
-                conv = ServiceLocator.conversationDAO().findByName("Global Chat");
-            } else if (chatUI.isGroupTarget(target)) {
-                long groupId = chatUI.getGroupId(target);
-                conv = ServiceLocator.conversationDAO().findById(groupId);
-            } else {
-                // Private conversation
-                conv = chatUI.findPrivateConversation(fromUser, target);
-            }
-
-            if (conv != null) {
-                // Content sẽ được mã hóa trong saveMessage
-                ServiceLocator.messageService().saveMessage(conv, fromUser, content, null);
+                if (conv != null) {
+                    // Content sẽ được mã hóa trong saveMessage
+                    ServiceLocator.messageService().saveMessage(conv, fromUser, content, null);
+                }
             }
 
         } catch (Exception e) {
@@ -164,6 +274,7 @@ public class ChatService {
             throw e;
         }
     }
+    
     public void download(String id){
         client.requestFile(id);
     }
@@ -175,28 +286,31 @@ public class ChatService {
     public void sendFile(long convId, String path){
         try {
             File f = new File(path);
+            if (!f.exists()) {
+                throw new IOException("File không tồn tại: " + path);
+            }
+            
+            // Đọc dữ liệu file
             byte[] data = Files.readAllBytes(f.toPath());
-
-            /* cache cho chính mình */
-            String key = UUID.randomUUID().toString();
-            fileCache.put(key, data);
-
-            /* gởi server */
+            
+            // Gửi file với đầy đủ tham số
             client.sendFile(convId, f.getName(), data);
-        } catch (IOException ex) { ex.printStackTrace(); }
+        } catch (Exception e) {
+            System.out.println("Lỗi khi gửi file: " + e.getMessage());
+            throw new RuntimeException(e);
+        }
     }
 
     public List<MessageDTO> getHistory() {
         return messageHistory;
     }
 
-    // setter/getter cho currentConversation
     public void setConversation(Conversation conv) {
         this.currentConversation = conv;
     }
 
     public Conversation getConversation() {
-        return this.currentConversation;
+        return currentConversation;
     }
 
     public ClientConnection getClient() {
@@ -207,18 +321,102 @@ public class ChatService {
         this.client = client;
     }
 
+    /**
+     * Lấy thumbnail từ cache
+     * @param id ID của file cần lấy thumbnail
+     * @return byte[] dữ liệu thumbnail hoặc null nếu không có
+     */
     public byte[] getThumb(String id){
         return thumbCache.get(id);
     }
-
+    
+    /**
+     * Lấy CompletableFuture cho thumbnail
+     * @param id ID của file
+     * @return CompletableFuture sẽ hoàn thành khi thumbnail có sẵn
+     */
+    public java.util.concurrent.CompletableFuture<byte[]> getThumbFuture(String id) {
+        // Nếu đã có thumbnail trong cache, trả về CompletableFuture đã hoàn thành
+        byte[] cachedThumb = thumbCache.get(id);
+        if (cachedThumb != null) {
+            System.out.println("[DEBUG] Thumbnail " + id + " đã có trong cache, trả về ngay lập tức");
+            return java.util.concurrent.CompletableFuture.completedFuture(cachedThumb);
+        }
+        
+        // Nếu đã có future đang chờ, trả về future đó
+        java.util.concurrent.CompletableFuture<byte[]> existingFuture = thumbFutures.get(id);
+        if (existingFuture != null) {
+            System.out.println("[DEBUG] Đã có CompletableFuture đang chờ cho thumbnail " + id);
+            return existingFuture;
+        }
+        
+        // Tạo future mới và yêu cầu thumbnail
+        java.util.concurrent.CompletableFuture<byte[]> newFuture = new java.util.concurrent.CompletableFuture<>();
+        thumbFutures.put(id, newFuture);
+        System.out.println("[DEBUG] Tạo CompletableFuture mới cho thumbnail " + id);
+        
+        // Yêu cầu thumbnail nếu chưa yêu cầu
+        if (!thumbRequested.contains(id)) {
+            System.out.println("[DEBUG] Gửi yêu cầu thumbnail cho " + id);
+            requestThumb(id);
+        } else {
+            System.out.println("[DEBUG] Thumbnail " + id + " đã được yêu cầu trước đó");
+        }
+        
+        return newFuture;
+    }
+    
+    /**
+     * Lấy toàn bộ thumbnail cache
+     */
+    public Map<String, byte[]> getThumbCache() {
+        return thumbCache;
+    }
+    
+    /**
+     * Thêm thumbnail vào cache và hoàn thành CompletableFuture tương ứng
+     * @param id ID của file
+     * @param thumbData Dữ liệu thumbnail
+     */
+    public void addThumbToCache(String id, byte[] thumbData) {
+        if (id != null && thumbData != null) {
+            // Thêm vào cache
+            thumbCache.put(id, thumbData);
+            
+            // Hoàn thành future nếu có
+            java.util.concurrent.CompletableFuture<byte[]> future = thumbFutures.get(id);
+            if (future != null && !future.isDone()) {
+                future.complete(thumbData);
+                System.out.println("[DEBUG] Hoàn thành CompletableFuture cho thumbnail " + id);
+            }
+            
+            // Thông báo cho tất cả các file bubble cập nhật thumbnail
+            if (chatUIRefactored != null && chatUIRefactored.getFileHandler() != null) {
+                Platform.runLater(() -> {
+                    chatUIRefactored.getFileHandler().refreshThumbnail(id);
+                });
+            }
+        }
+    }
+    
+    /**
+     * Kiểm tra đã yêu cầu thumbnail chưa
+     */
     public boolean isThumbRequested(String id) {
         return thumbRequested.contains(id);
     }
 
+    /**
+     * Yêu cầu thumbnail từ server
+     * @param id ID của file cần lấy thumbnail
+     */
     public void requestThumb(String id) {
-        if (!thumbRequested.contains(id)) {
+        if(!thumbRequested.contains(id)){
             thumbRequested.add(id);
+            System.out.println("[INFO] Gửi yêu cầu thumbnail cho ID: " + id);
             client.requestThumb(id);
+        } else {
+            System.out.println("[INFO] Thumbnail ID: " + id + " đã được yêu cầu trước đó");
         }
     }
 }

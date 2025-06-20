@@ -78,3 +78,56 @@
     -fx-border-radius: 50%;
     -fx-effect: dropshadow(three-pass-box, rgba(0,0,0,0.1), 3, 0, 0, 0);
 }
+/* Badge cho tab */
+.tab-with-badge {
+    position: relative;
+}
+
+.tab-badge {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background-color: #f44336;
+    color: white;
+    border-radius: 10px;
+    padding: 2px 6px;
+    font-size: 11px;
+    font-weight: bold;
+    min-width: 18px;
+    text-align: center;
+}
+
+/* Animation cho badge mới */
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.2); }
+    100% { transform: scale(1); }
+}
+
+.tab-badge.new {
+    animation: pulse 0.5s ease-in-out 3;
+}
+
+/* Highlight tab khi có notification */
+.tab-pane .tab {
+    background-color: rgba(244, 67, 54, 0.1);
+}
+.friend-request-notification {
+    -fx-background-color: white;
+    -fx-background-radius: 8;
+    -fx-min-width: 280px;
+}
+
+.friend-request-notification .btn-primary {
+    -fx-background-color: #2196F3;
+    -fx-text-fill: white;
+    -fx-padding: 8 16;
+    -fx-cursor: hand;
+}
+
+.friend-request-notification .btn-secondary {
+    -fx-background-color: #e0e0e0;
+    -fx-text-fill: #333;
+    -fx-padding: 8 16;
+    -fx-cursor: hand;
+}

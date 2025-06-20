@@ -7,6 +7,7 @@ import org.hibernate.Session;
 import org.hibernate.Transaction;
 import org.springframework.stereotype.Repository;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Repository
@@ -71,6 +72,25 @@ public class MessageDAO {
             }
 
             return messages;
+        }
+    }
+
+    /**
+     * Tìm tin nhắn theo ID cuộc trò chuyện với giới hạn số lượng
+     * @param conversationId ID cuộc trò chuyện
+     * @param limit Số lượng tin nhắn tối đa
+     * @return Danh sách tin nhắn
+     */
+    public List<Message> findByConversationId(Long conversationId, int limit) {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            String hql = "FROM Message m WHERE m.conversation.id = :convId ORDER BY m.createdAt DESC";
+            return session.createQuery(hql, Message.class)
+                    .setParameter("convId", conversationId)
+                    .setMaxResults(limit)
+                    .getResultList();
+        } catch (Exception e) {
+            e.printStackTrace();
+            return new ArrayList<>();
         }
     }
 

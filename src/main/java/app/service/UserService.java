@@ -3,12 +3,15 @@ package app.service;
 import app.dao.UserDAO;
 import app.model.User;
 import app.util.AvatarUtil;
+import app.util.EmailUtil;
 import app.util.PasswordUtil;
+import app.util.PathUtil;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -97,33 +100,55 @@ public class UserService {
             return false;
         }
         
+        // Kiểm tra file tồn tại
+        if (imageFile == null || !imageFile.exists()) {
+            System.err.println("File avatar không tồn tại: " + (imageFile != null ? imageFile.getPath() : "null"));
+            return false;
+        }
+
         try {
-            // Tạo thư mục avatars nếu chưa tồn tại
-            Path avatarsDir = Paths.get("uploads", "avatars");
+            // Tạo thư mục avatars với đường dẫn tuyệt đối
+            Path avatarsDir = Paths.get(System.getProperty("user.dir"), "uploads", "avatars");
             if (!Files.exists(avatarsDir)) {
                 Files.createDirectories(avatarsDir);
             }
-            
-            // Tạo tên file duy nhất
-            String fileName = username + "_" + System.currentTimeMillis() + 
-                    imageFile.getName().substring(imageFile.getName().lastIndexOf("."));
-            Path targetPath = avatarsDir.resolve(fileName);
-            
-            // Sao chép file
-            Files.copy(imageFile.toPath(), targetPath);
-            
-            // Cập nhật user với đường dẫn tương đối
-            user.setAvatarPath(targetPath.toString().replace('\\', '/'));
+
+            // Xóa avatar cũ nếu có
+            String oldPath = user.getAvatarPath();
+            if (oldPath != null && !oldPath.contains("avatar_")) { // Không xóa avatar mặc định
+                try {
+                    Files.deleteIfExists(Paths.get(oldPath));
+                } catch (Exception e) {
+                    // Bỏ qua lỗi xóa file cũ
+                }
+            }
+
+            // Tạo tên file chuẩn: username.png
+            String standardFileName = username + ".png";
+            Path targetPath = avatarsDir.resolve(standardFileName);
+
+            // Copy file mới (ghi đè nếu đã tồn tại)
+            Files.copy(imageFile.toPath(), targetPath, StandardCopyOption.REPLACE_EXISTING);
+
+            // Cập nhật user
+            user.setAvatarPath(PathUtil.normalizePath(targetPath.toString()));
             user.setUseDefaultAvatar(false);
             userDAO.update(user);
-            
+
+            // Sync to cache với đường dẫn tuyệt đối
+            Path cacheDir = Paths.get(System.getProperty("user.dir"), "avatar_cache");
+            if (!Files.exists(cacheDir)) {
+                Files.createDirectories(cacheDir);
+            }
+            Path cacheFile = cacheDir.resolve(standardFileName);
+            Files.copy(targetPath, cacheFile, StandardCopyOption.REPLACE_EXISTING);
+
             return true;
         } catch (IOException e) {
             e.printStackTrace();
             return false;
         }
     }
-    
     /**
      * Chuyển sang sử dụng avatar mặc định
      */
@@ -137,10 +162,28 @@ public class UserService {
             // Tạo avatar mặc định
             String avatarPath = AvatarUtil.createDefaultAvatar(username);
             if (avatarPath != null) {
-                // Đảm bảo đường dẫn tương đối
-                user.setAvatarPath(avatarPath.replace('\\', '/'));
+                // Lưu đường dẫn tuyệt đối nhưng đảm bảo định dạng đúng
+                user.setAvatarPath(PathUtil.normalizePath(avatarPath));
                 user.setUseDefaultAvatar(true);
                 userDAO.update(user);
+                
+                // Sync to cache với đường dẫn tuyệt đối
+                try {
+                    Path avatarFile = Paths.get(avatarPath);
+                    String fileName = avatarFile.getFileName().toString();
+                    
+                    Path cacheDir = Paths.get(System.getProperty("user.dir"), "avatar_cache");
+                    if (!Files.exists(cacheDir)) {
+                        Files.createDirectories(cacheDir);
+                    }
+                    
+                    Path cacheFile = cacheDir.resolve(fileName);
+                    Files.copy(avatarFile, cacheFile, StandardCopyOption.REPLACE_EXISTING);
+                } catch (IOException e) {
+                    // Bỏ qua lỗi cache
+                    e.printStackTrace();
+                }
+                
                 return true;
             }
         } catch (Exception e) {
@@ -161,6 +204,7 @@ public class UserService {
         
         // Kiểm tra mật khẩu cũ
         if (!PasswordUtil.checkPassword(oldPassword, user.getPasswordHash())) {
+            System.err.println("Đổi mật khẩu thất bại: Mật khẩu hiện tại không đúng cho người dùng " + username);
             return false;
         }
         
@@ -186,8 +230,14 @@ public class UserService {
         }
         
         // Kiểm tra mã OTP
-        if (!Objects.equals(otp, user.getOtpCode()) || 
-            System.currentTimeMillis() > user.getOtpExpiryTime()) {
+        if (!Objects.equals(otp, user.getOtpCode())) {
+            System.err.println("Đổi mật khẩu thất bại: Mã OTP không đúng cho người dùng " + username);
+            return false;
+        }
+        
+        // Kiểm tra thời gian hết hạn của OTP
+        if (System.currentTimeMillis() > user.getOtpExpiryTime()) {
+            System.err.println("Đổi mật khẩu thất bại: Mã OTP đã hết hạn cho người dùng " + username);
             return false;
         }
         
@@ -221,8 +271,8 @@ public class UserService {
         
         userDAO.update(user);
         
-        // Gửi mã OTP qua email (tạm thời bỏ qua)
-        // EmailUtil.sendOTPEmail(user.getEmail(), otp);
+        // Gửi mã OTP qua email
+        EmailUtil.sendOTPEmail(user.getEmail(), otp);
         
         return otp;
     }
@@ -234,5 +284,22 @@ public class UserService {
 
     public List<User> searchUsers(String keyword) {
         return userDAO.searchByUsernamePrefix(keyword);
+    }
+
+    /**
+     * Cập nhật trạng thái avatar người dùng trong database
+     */
+    public boolean updateUserAvatar(User user) {
+        if (user == null) {
+            return false;
+        }
+        
+        try {
+            userDAO.update(user);
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
     }
 }

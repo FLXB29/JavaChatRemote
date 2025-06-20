@@ -31,20 +31,73 @@
 
 /* Avatar styles */
 .avatar-circle {
+    -fx-fill: #3498db;  /* Màu mặc định cho circle */
     -fx-stroke: #ffffff;
-    -fx-stroke-width: 2px;
+    -fx-stroke-width: 2;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3), 5, 0, 0, 2);
 }
 
 .avatar-initial {
     -fx-text-fill: white;
+    -fx-font-size: 26px;
     -fx-font-weight: bold;
-    -fx-font-size: 14px;
+    -fx-alignment: center;
+}
+
+/* Đảm bảo không có màu nền đen ảnh hưởng đến avatar */
+.avatar-image {
+    -fx-background-color: transparent;
 }
 
 .current-user-label {
     -fx-font-size: 16px;
     -fx-font-weight: bold;
     -fx-text-fill: #1c1e21;
+}
+
+/* Welcome screen styles */
+.welcome-screen {
+    -fx-background-color: white;
+    -fx-padding: 30px;
+    -fx-alignment: center;
+}
+
+.welcome-screen .label {
+    -fx-text-alignment: center;
+    -fx-wrap-text: true;
+}
+
+.welcome-screen-title {
+    -fx-font-size: 24px;
+    -fx-font-weight: bold;
+    -fx-text-fill: #2196F3;
+    -fx-padding: 0 0 10px 0;
+}
+
+.welcome-screen-message {
+    -fx-font-size: 16px;
+    -fx-text-fill: #666;
+    -fx-max-width: 400px;
+    -fx-wrap-text: true;
+}
+
+.tips-box {
+    -fx-background-color: rgba(33, 150, 243, 0.1);
+    -fx-padding: 15px;
+    -fx-background-radius: 5px;
+    -fx-max-width: 400px;
+    -fx-spacing: 8px;
+}
+
+.tips-title {
+    -fx-font-weight: bold;
+    -fx-font-size: 14px;
+    -fx-text-fill: #2196F3;
+}
+
+.tip-item {
+    -fx-font-size: 13px;
+    -fx-text-fill: #444;
 }
 
 /* Tab styles */
@@ -292,12 +345,21 @@
 }
 
 .btn-primary {
-    -fx-background-color: linear-gradient(to bottom, #007bff, #0056b3);
+    -fx-background-color: #007bff;
     -fx-text-fill: white;
+    -fx-font-weight: bold;
+    -fx-padding: 8px 16px;
+    -fx-background-radius: 5px;
+    -fx-cursor: hand;
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.2), 3, 0, 0, 1);
 }
 
 .btn-primary:hover {
-    -fx-background-color: linear-gradient(to bottom, #0056b3, #004085);
+    -fx-background-color: #0069d9;
+}
+
+.btn-primary:pressed {
+    -fx-background-color: #0062cc;
 }
 
 .btn-success {
@@ -383,18 +445,6 @@
 /* Tab notification badge */
 .tab-pane .tab .tab-label {
     -fx-font-weight: bold;
-}
-
-/* Avatar styles */
-.avatar-circle {
-    -fx-stroke: #ddd;
-    -fx-stroke-width: 2;
-}
-
-.avatar-initial {
-    -fx-font-weight: bold;
-    -fx-text-fill: white;
-    -fx-font-size: 14px;
 }
 
 /* Search field improvements */
@@ -533,4 +583,47 @@
 
 .tab-notification .tab-label {
     -fx-animation: badge-pulse 1.5s infinite ease-in-out;
+}
+
+/* Error message styling */
+.error-message {
+    -fx-text-fill: #dc3545;
+    -fx-font-size: 14px;
+    -fx-font-weight: bold;
+    -fx-wrap-text: true;
+    -fx-padding: 15px;
+    -fx-background-color: rgba(220, 53, 69, 0.1);
+    -fx-background-radius: 5px;
+    -fx-border-color: #dc3545;
+    -fx-border-width: 1px;
+    -fx-border-radius: 5px;
+    -fx-alignment: center;
+    -fx-text-alignment: center;
+    -fx-max-width: 500px;
+}
+
+/* Network status indicator */
+.network-status {
+    -fx-background-radius: 8px;
+    -fx-min-width: 16px;
+    -fx-min-height: 16px;
+    -fx-max-width: 16px;
+    -fx-max-height: 16px;
+    -fx-cursor: hand;
+}
+
+.network-status.online {
+    -fx-background-color: #28a745;
+}
+
+.network-status.offline {
+    -fx-background-color: #dc3545;
+}
+
+.network-status.connecting {
+    -fx-background-color: #ffc107;
+}
+
+.network-status:hover {
+    -fx-effect: dropshadow(gaussian, rgba(0,0,0,0.3), 4, 0, 0, 0);
 }

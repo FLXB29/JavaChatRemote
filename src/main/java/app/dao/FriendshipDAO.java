@@ -74,4 +74,14 @@ public class FriendshipDAO {
                     .list();
         }
     }
+    
+    /** Danh sách tất cả lời mời liên quan đến user (cả gửi và nhận) */
+    public List<Friendship> findAllPending(User u) {
+        String hql = "FROM Friendship f WHERE (f.user1 = :u OR f.user2 = :u) AND f.status = 'PENDING'";
+        try (Session s = HibernateUtil.getSessionFactory().openSession()) {
+            return s.createQuery(hql, Friendship.class)
+                    .setParameter("u", u)
+                    .list();
+        }
+    }
 }

@@ -68,13 +68,14 @@ public class AvatarUtil {
         
         // Lưu hình ảnh vào thư mục
         try {
-            // Tạo thư mục nếu chưa tồn tại
-            String dir = "uploads/avatars/" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
-            Files.createDirectories(Paths.get(dir));
+            // Tạo thư mục nếu chưa tồn tại với đường dẫn tuyệt đối
+            String dateDir = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
+            Path dir = Paths.get(System.getProperty("user.dir"), "uploads", "avatars", dateDir);
+            Files.createDirectories(dir);
             
             // Tạo tên file
             String fileName = "avatar_" + System.currentTimeMillis() + ".png";
-            Path filePath = Paths.get(dir, fileName);
+            Path filePath = dir.resolve(fileName);
             
             // Lưu hình ảnh
             ImageIO.write(bufferedImage, "png", filePath.toFile());
@@ -93,16 +94,22 @@ public class AvatarUtil {
      */
     public static String createAvatarFromFile(File imageFile) {
         try {
-            // Tạo thư mục nếu chưa tồn tại
-            String dir = "uploads/avatars/" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
-            Files.createDirectories(Paths.get(dir));
+            // Tạo thư mục nếu chưa tồn tại với đường dẫn tuyệt đối
+            String dateDir = LocalDate.now().format(DateTimeFormatter.ofPattern("yyyy/MM/dd"));
+            Path dir = Paths.get(System.getProperty("user.dir"), "uploads", "avatars", dateDir);
+            Files.createDirectories(dir);
             
             // Tạo tên file
             String fileName = "avatar_" + System.currentTimeMillis() + ".png";
-            Path filePath = Paths.get(dir, fileName);
+            Path filePath = dir.resolve(fileName);
             
             // Sao chép file
-            Files.copy(imageFile.toPath(), filePath);
+            // Kiểm tra xem file nguồn có tồn tại không
+            if (Files.exists(imageFile.toPath())) {
+                Files.copy(imageFile.toPath(), filePath);
+            } else {
+                throw new IOException("Source image file does not exist: " + imageFile.getAbsolutePath());
+            }
             
             return filePath.toString();
         } catch (IOException e) {
@@ -110,4 +117,4 @@ public class AvatarUtil {
             return null;
         }
     }
-} 
+}

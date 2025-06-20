@@ -15,6 +15,7 @@ import com.google.gson.GsonBuilder;
 import net.coobird.thumbnailator.Thumbnails;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import app.ServiceLocator;
+import app.util.PathUtil;
 
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
@@ -24,6 +25,7 @@ import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.security.MessageDigest;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -53,17 +55,32 @@ public class ServerApp {
     private Conversation globalConv;
 
     public ServerApp() {
-        // Khởi tạo ServiceLocator nếu chưa được khởi tạo
-        if (ServiceLocator.userService() == null) {
+        // Khởi tạo ServiceLocator với đầy đủ các dịch vụ
+        try {
             ServiceLocator.init(true);
+            
+            // Kiểm tra các dịch vụ quan trọng và khởi tạo lại nếu cần
+            if (ServiceLocator.userService() == null || 
+                ServiceLocator.friendship() == null || 
+                ServiceLocator.messageService() == null) {
+                
+                System.out.println("[WARN] Một số dịch vụ chưa được khởi tạo, đang khởi tạo lại...");
+                ServiceLocator.init(true);
+                
+                // Kiểm tra lại
+                System.out.println("[DEBUG] Trạng thái các dịch vụ sau khi khởi tạo:");
+                System.out.println("[DEBUG] userService: " + (ServiceLocator.userService() != null));
+                System.out.println("[DEBUG] friendship: " + (ServiceLocator.friendship() != null));
+                System.out.println("[DEBUG] messageService: " + (ServiceLocator.messageService() != null));
+            }
+        } catch (Exception e) {
+            System.err.println("[ERROR] Lỗi khi khởi tạo ServiceLocator: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
     public ServerApp(int port) throws IOException {
-        // Khởi tạo ServiceLocator nếu chưa được khởi tạo
-        if (ServiceLocator.userService() == null) {
-            ServiceLocator.init(true);
-        }
+        this(); // Gọi constructor không tham số để đảm bảo khởi tạo ServiceLocator
         this.server = new ServerSocket(port);
     }
 
@@ -73,18 +90,19 @@ public class ServerApp {
 
     public void start(int port) {
         try {
+            // Khởi tạo ServiceLocator với đầy đủ các dịch vụ
+            ServiceLocator.init(true);
+            
+            // Kiểm tra các dịch vụ quan trọng và khởi tạo lại nếu cần
+            if (ServiceLocator.userService() == null || ServiceLocator.friendship() == null) {
+                System.out.println("[WARN] Một số dịch vụ chưa được khởi tạo đúng, đang khởi tạo lại...");
+                ServiceLocator.init(true);
+            }
+            
             // 0 ▪ Khởi Spring
             ctx = new AnnotationConfigApplicationContext(app.config.AppConfig.class);
             groupSvc = ctx.getBean(GroupMessageService.class);
             groupSvc.setServer(this);           // <─ truyền chính ServerApp hiện tại
-
-            // Khởi tạo các service cần thiết
-            if (ServiceLocator.userService() == null) {
-                System.out.println("[ERROR] UserService chưa được khởi tạo!");
-                return;
-            }
-            // Khởi tạo DatabaseKeyManager
-
 
             if (server == null) {
                 server = new ServerSocket(port);
@@ -384,17 +402,44 @@ public class ServerApp {
                             conversationDAO.save(g);
 
                             List<String> members = new ArrayList<>();
-                            members.add(username);
-                            for(String m: arr) if(!m.isBlank()) members.add(m.trim());
+                            members.add(username);  // Người tạo
+
+                            // Kiểm tra để tránh duplicate
+                            for(String m: arr) {
+                                if(!m.isBlank() && !m.trim().equals(username)) {
+                                    members.add(m.trim());
+                                }
+                            }
 
                             for(String u: members){
                                 addMembership(u, g, u.equals(username)?"owner":"member");
                             }
 
-                            /* gửi lại CONV_LIST cho mỗi thành viên online */
-                            for(String u: members) if(clients.containsKey(u)) sendConvList(u);
-                        }
+                            // Broadcast GROUP_CREATED cho tất cả members
+                            for(String memberUsername : members) {
+                                ClientHandler memberHandler = clients.get(memberUsername);
+                                if(memberHandler != null) {
+                                    // 1. Gửi thông báo nhóm được tạo
+                                    memberHandler.sendPacket(new Packet(
+                                            PacketType.GROUP_CREATED,
+                                            gName + ":" + g.getId(),  // Đảm bảo đúng định dạng "tên_nhóm:id"
+                                            null
+                                    ));
 
+                                    // 2. Cập nhật danh sách conversation
+                                    sendConvList(memberUsername);
+
+                                    // 3. Nếu không phải người tạo, gửi thông báo
+                                    if(!memberUsername.equals(username)) {
+                                        memberHandler.sendPacket(new Packet(
+                                                PacketType.GROUP_MSG,
+                                                String.valueOf(g.getId()),
+                                                ("System|Bạn đã được thêm vào nhóm " + gName).getBytes()
+                                        ));
+                                    }
+                                }
+                            }
+                        }
 
 
                         case GROUP_MSG -> {
@@ -421,37 +466,41 @@ public class ServerApp {
                         }
 
                         case AVATAR_UPLOAD -> {
-                            /* 1) xác định user gửi gói tin */
-                            String username = this.username;  // Sử dụng username từ ClientHandler
-
-                            /* 2) tạo tên file an toàn */
-                            String ext  = pkt.header().substring(pkt.header().lastIndexOf('.')); // .png…
-                            String fname= username + "_" + System.currentTimeMillis() + ext;
-                            Path  dst   = Path.of("uploads", "avatars", fname);
-                            Files.createDirectories(dst.getParent());
-                            Files.write(dst, pkt.payload());                  // lưu file
-
-                            /* 3) cập nhật DB */
+                            String username = this.username;
                             User u = userDAO.findByUsername(username);
                             if (u == null) {
                                 System.out.println("Lỗi: Không tìm thấy user " + username);
                                 break;
                             }
-                            u.setAvatarPath("uploads/avatars/" + fname);      // LƯU TƯƠNG ĐỐI
+
+                            // Lưu file avatar với tên chuẩn
+                            String fname = username + ".png";
+                            Path dst = Path.of("uploads", "avatars", fname);
+                            Files.createDirectories(dst.getParent());
+
+                            // Ghi đè file cũ nếu có
+                            Files.write(dst, pkt.payload(), StandardOpenOption.CREATE,
+                                    StandardOpenOption.TRUNCATE_EXISTING);
+
+                            // Cập nhật DB
+                            u.setAvatarPath("uploads/avatars/" + fname);
                             u.setUseDefaultAvatar(false);
                             userDAO.update(u);
 
-                            /* 4) phát cho tất cả client */
+                            // Phát cho tất cả client
                             Packet p = new Packet(PacketType.AVATAR_DATA, username, pkt.payload());
                             broadcast(p);
-                        }
 
+                            System.out.println("[AVATAR] Đã cập nhật avatar cho " + username);
+                        }
                         case GET_AVATAR -> {
                             String targetUser = pkt.header();                 // header = username
                             User u = userDAO.findByUsername(targetUser);
                             if(u == null || u.getAvatarPath()==null) break;
 
-                            byte[] data = Files.readAllBytes(Path.of(u.getAvatarPath()));
+                            // Chuẩn hóa đường dẫn để tương thích với cả Windows và Linux
+                            String avatarPath = PathUtil.normalizePath(u.getAvatarPath());
+                            byte[] data = Files.readAllBytes(Path.of(avatarPath));
                             sendPacket(new Packet(PacketType.AVATAR_DATA, targetUser, data)); // chỉ gửi requester
                         }
 
@@ -500,6 +549,7 @@ public class ServerApp {
                                         case PENDING -> "ALREADY_PENDING";
                                         case ACCEPTED -> "ALREADY_FRIENDS";
                                         case BLOCKED -> "BLOCKED";
+                                        case REJECTED -> "PREVIOUSLY_REJECTED";
                                     };
                                     sendPacket(new Packet(PacketType.ACK, "FRIEND_REQUEST_FAIL_" + reason, null));
                                     break;
@@ -624,8 +674,19 @@ public class ServerApp {
                                     break;
                                 }
 
-                                // Reject the friend request
-                                ServiceLocator.friendship().rejectFriendRequest(fromUser, toUser);
+                                // Thay đổi: Xóa lời mời kết bạn thay vì chỉ cập nhật trạng thái
+                                Friendship friendship = ServiceLocator.friendship().getFriendshipBetween(fromUser, toUser);
+                                if (friendship == null || friendship.getStatus() != Friendship.Status.PENDING) {
+                                    System.out.println("[ERROR] Không tìm thấy lời mời kết bạn đang chờ hoặc trạng thái không hợp lệ");
+                                    sendPacket(new Packet(PacketType.ACK, "FRIEND_REJECT_FAIL_NOT_FOUND_OR_INVALID_STATUS", null));
+                                    break;
+                                }
+
+                                // Xóa lời mời kết bạn
+                                app.dao.FriendshipDAO friendshipDAO = new app.dao.FriendshipDAO();
+                                friendshipDAO.delete(friendship);
+                                System.out.println("[DEBUG] Đã xóa lời mời kết bạn khỏi cơ sở dữ liệu");
+                                System.out.println("[DEBUG] Đã cập nhật lời mời kết bạn thành REJECTED");
 
                                 // Send success ACK to rejecter
                                 sendPacket(new Packet(PacketType.ACK, "FRIEND_REJECT_SUCCESS", null));
@@ -663,8 +724,8 @@ public class ServerApp {
                                     break;
                                 }
 
-                                List<Friendship> pending = ServiceLocator.friendship().getPendingRequests(user);
-                                System.out.println("[DEBUG] Tìm thấy " + pending.size() + " pending requests cho " + username);
+                                List<Friendship> pending = ServiceLocator.friendship().getAllPendingRequests(user);
+                                System.out.println("[DEBUG] Tìm thấy " + pending.size() + " pending requests (cả gửi và nhận) cho " + username);
 
                                 // *** FIX: Sử dụng custom Gson với exclusion strategy ***
                                 Gson gson = new GsonBuilder()
@@ -693,8 +754,21 @@ public class ServerApp {
                                 e.printStackTrace();
                             }
                         }
-
-                        default -> {}
+                        case GET_CONV_LIST -> {
+                            // Gửi lại danh sách conversation cho người dùng
+                            System.out.println("[DEBUG] Nhận yêu cầu GET_CONV_LIST từ " + username);
+                            if (username != null) {
+                                sendConvList(username);
+                            }
+                        }
+                        // Thêm case cho các giá trị còn lại trong enum PacketType
+                        case ACK, FILE_META, FILE_CHUNK, FILE_THUMB, USRLIST, CONV_LIST,
+                             HISTORY, GET_USERLIST, FRIEND_REQUEST_NOTIFICATION, 
+                             FRIEND_REQUEST_ACCEPTED, FRIEND_REQUEST_REJECTED, 
+                             AVATAR_DATA, FRIEND_STATUS -> {
+                            // Các loại packet khác không cần xử lý trực tiếp ở đây
+                            // Chúng được xử lý ở các phần khác của mã
+                        }
                     }
                 }
 
@@ -768,22 +842,37 @@ public class ServerApp {
 
         private void sendPendingFriendRequestsOnLogin(String username) {
             try {
-                System.out.println("[DEBUG] Auto-sending pending friend requests cho " + username);
-
-                User user = ServiceLocator.userService().getUser(username);
+                User user = userDAO.findByUsername(username);
                 if (user == null) {
-                    System.out.println("[ERROR] User không tồn tại khi auto-send: " + username);
+                    System.out.println("[WARN] Không thể lấy pending requests cho username không tồn tại: " + username);
                     return;
                 }
-
-                List<Friendship> pending = ServiceLocator.friendship().getPendingRequests(user);
-                System.out.println("[DEBUG] Tìm thấy " + pending.size() + " pending requests cho " + username);
+                
+                // Kiểm tra service trước khi sử dụng
+                if (ServiceLocator.friendship() == null) {
+                    System.out.println("[ERROR] FriendshipService chưa được khởi tạo, đang thử khởi tạo lại...");
+                    ServiceLocator.init(true);
+                    
+                    // Kiểm tra lại
+                    if (ServiceLocator.friendship() == null) {
+                        System.out.println("[ERROR] Vẫn không thể khởi tạo FriendshipService, bỏ qua việc gửi pending requests");
+                        return;
+                    }
+                }
+                
+                // Lấy danh sách tất cả lời mời kết bạn đang chờ (cả gửi và nhận)
+                List<Friendship> pending = ServiceLocator.friendship().getAllPendingRequests(user);
+                
+                if (pending == null) {
+                    System.out.println("[WARN] Danh sách pending requests là null, có thể do lỗi kết nối database");
+                    return;
+                }
+                
+                System.out.println("[DEBUG] Tìm thấy " + pending.size() + " pending requests (cả gửi và nhận) cho " + username);
 
                 if (!pending.isEmpty()) {
-                    // Convert to JSON với proper date handling
-                    Gson gson = new GsonBuilder()
-                            .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
-                            .create();
+                    // Sử dụng GsonUtils để tạo Gson với các adapter an toàn cho Hibernate
+                    Gson gson = app.GsonUtils.createFriendshipSafeGson();
                     String json = gson.toJson(pending);
 
                     // Gửi packet với delay nhỏ để đảm bảo client đã setup callbacks
@@ -834,9 +923,8 @@ public class ServerApp {
                 ));
             }
 
-            Gson gson = new GsonBuilder()
-                    .registerTypeAdapter(LocalDateTime.class, new LocalDateTimeAdapter())
-                    .create();
+            // Sử dụng GsonUtils thay vì khởi tạo mới Gson mỗi lần
+            Gson gson = app.GsonUtils.createBasicGson();
 
             return gson.toJson(dtoList);
         }

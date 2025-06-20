@@ -1,9 +1,11 @@
 package app.controller;
 
 import app.ServiceLocator;
+import app.controller.chat.ChatControllerRefactored;
 import app.model.User;
 import app.service.UserService;
 import app.util.EmailUtil;
+import app.util.PasswordUtil;
 import javafx.application.Platform;
 import javafx.fxml.FXML;
 import javafx.fxml.FXMLLoader;
@@ -144,7 +146,29 @@ public class ProfileController {
                 lblInitial.setVisible(false);
                 currentAvatarPath = avatarPath;
             } else {
-                showDefaultAvatar(currentUsername);
+                System.err.println("Avatar file không tồn tại: " + avatarPath);
+                // Thử tìm file trong thư mục avatar_cache
+                try {
+                    String fileName = Paths.get(avatarPath).getFileName().toString();
+                    Path cachePath = Paths.get(System.getProperty("user.dir"), "avatar_cache", fileName);
+                    
+                    if (Files.exists(cachePath)) {
+                        Image img = new Image(cachePath.toUri().toString(), false);
+                        ImagePattern pattern = new ImagePattern(img, 0, 0, 1, 1, true);
+                        avatarCircle.setFill(pattern);
+                        avatarCircle.setRadius(50);
+                        avatarCircle.setStroke(Color.WHITE);
+                        avatarCircle.setStrokeWidth(2);
+                        imgAvatar.setVisible(false);
+                        lblInitial.setVisible(false);
+                        currentAvatarPath = cachePath.toString().replace('\\', '/');
+                    } else {
+                        showDefaultAvatar(currentUsername);
+                    }
+                } catch (Exception ex) {
+                    ex.printStackTrace();
+                    showDefaultAvatar(currentUsername);
+                }
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -192,38 +216,26 @@ public class ProfileController {
         File selectedFile = fileChooser.showOpenDialog(btnChangeAvatar.getScene().getWindow());
         if (selectedFile != null) {
             try {
-                // Create avatars directory if it doesn't exist
-                Path avatarsDir = Paths.get("uploads", "avatars");
-                if (!Files.exists(avatarsDir)) {
-                    Files.createDirectories(avatarsDir);
-                }
-
-                // Create unique filename
-                String fileName = currentUsername + "_" + System.currentTimeMillis() +
-                        selectedFile.getName().substring(selectedFile.getName().lastIndexOf("."));
-                Path targetPath = avatarsDir.resolve(fileName);
-
-                // Copy file
-                Files.copy(selectedFile.toPath(), targetPath);
-
-                // Update avatar
-                currentAvatarPath = targetPath.toString();
-                useDefaultAvatar = false;
-                showCustomAvatar(currentAvatarPath);
-
-                // Update in database and notify server
+                // Update avatar với logic mới
                 if (userService.updateAvatar(currentUsername, selectedFile)) {
                     // Upload avatar to server
                     ServiceLocator.chat().getClient().uploadAvatar(selectedFile);
 
-                    // Request avatars for all users to ensure everyone has the latest
+                    // Hiển thị avatar mới với đường dẫn tuyệt đối
+                    String avatarFileName = currentUsername + ".png";
+                    Path avatarPath = Paths.get(System.getProperty("user.dir"), "uploads", "avatars", avatarFileName);
+                    currentAvatarPath = avatarPath.toString().replace('\\', '/');
+                    useDefaultAvatar = false;
+                    showCustomAvatar(currentAvatarPath);
+
+                    // Request avatars để đồng bộ
                     ServiceLocator.chat().getClient().requestAllAvatars();
 
                     showSuccess("Đã thay đổi ảnh đại diện!");
                 } else {
-                    showError("Không thể cập nhật ảnh đại diện trong database");
+                    showError("Không thể cập nhật ảnh đại diện");
                 }
-            } catch (IOException e) {
+            } catch (Exception e) {
                 e.printStackTrace();
                 showError("Không thể thay đổi ảnh đại diện: " + e.getMessage());
             }
@@ -243,9 +255,20 @@ public class ProfileController {
             User user = userService.getUser(currentUsername);
             if (user != null && user.getAvatarPath() != null) {
                 try {
+                    // Sử dụng đường dẫn tuyệt đối
                     File defaultAvatarFile = new File(user.getAvatarPath());
                     if (defaultAvatarFile.exists()) {
                         ServiceLocator.chat().getClient().uploadAvatar(defaultAvatarFile);
+                    } else {
+                        // Thử tìm trong thư mục cache
+                        String fileName = Paths.get(user.getAvatarPath()).getFileName().toString();
+                        Path cachePath = Paths.get(System.getProperty("user.dir"), "avatar_cache", fileName);
+                        
+                        if (Files.exists(cachePath)) {
+                            ServiceLocator.chat().getClient().uploadAvatar(cachePath.toFile());
+                        } else {
+                            throw new IOException("Không tìm thấy file avatar: " + user.getAvatarPath());
+                        }
                     }
                 } catch (IOException e) {
                     e.printStackTrace();
@@ -274,17 +297,21 @@ public class ProfileController {
             return;
         }
         
-        // Tạo mã OTP ngẫu nhiên 6 chữ số
-        currentOtp = EmailUtil.generateOTP();
+        // Tạo mã OTP và lưu vào database
+        currentOtp = userService.generateOTP(currentUsername);
+        
+        if (currentOtp == null) {
+            showError("Không thể tạo mã OTP. Vui lòng thử lại sau.");
+            return;
+        }
         
         // Đặt thời gian hết hạn (5 phút)
         otpExpiryTime = LocalDateTime.now().plusMinutes(5);
-        otpRequested    = true;                         // ĐÁNH DẤU đã yêu cầu
-        otpVerified     = false;                        // reset
-
-
-        // Gửi email chứa mã OTP
-        boolean success = EmailUtil.sendOTPEmail(user.getEmail(), currentOtp);
+        otpRequested = true;                         // ĐÁNH DẤU đã yêu cầu
+        otpVerified = false;                        // reset
+        
+        // OTP đã được gửi bởi userService.generateOTP()
+        boolean success = true;
         
         if (success) {
             // Bắt đầu đếm ngược 60 giây
@@ -347,10 +374,18 @@ public class ProfileController {
             txtOTP.requestFocus();
             return;
         }
-
-        boolean valid = currentOtp != null
-                && otpCode.equals(currentOtp)
-                && LocalDateTime.now().isBefore(otpExpiryTime);
+        
+        // Lấy thông tin OTP từ database
+        User user = userService.getUser(currentUsername);
+        if (user == null) {
+            showError("Không thể xác thực OTP: Không tìm thấy thông tin người dùng");
+            return;
+        }
+        
+        // Kiểm tra OTP từ database
+        boolean valid = user.getOtpCode() != null
+                && otpCode.equals(user.getOtpCode())
+                && System.currentTimeMillis() <= user.getOtpExpiryTime();
 
         if (valid) {
             otpVerified = true;            // bật cờ
@@ -406,22 +441,29 @@ public class ProfileController {
             return;
         }
 
-        /* 3. kiểm tra OTP */
-
-        boolean otpOk =  currentOtp != null
-                && otpCode.equals(currentOtp)
-                && LocalDateTime.now().isBefore(otpExpiryTime);
-
-        if (!otpOk) {
-            showError("OTP không đúng hoặc đã hết hạn");
+        /* 3. kiểm tra OTP đã được yêu cầu */
+        // Không cần kiểm tra OTP ở đây vì UserService.changePasswordWithOTP sẽ kiểm tra
+        // OTP từ database. Chỉ cần đảm bảo người dùng đã yêu cầu OTP.
+        if (otpCode.isEmpty()) {
+            showError("Vui lòng nhập mã OTP");
             txtOTP.requestFocus();
             return;
         }
 
-        /* 4. OTP hợp lệ → đổi mật khẩu */
-        boolean success = userService.changePassword(currentUsername,
+        /* 4. Kiểm tra mật khẩu hiện tại trước */
+        // Kiểm tra mật khẩu hiện tại trước khi thực hiện đổi mật khẩu
+        User user = userService.getUser(currentUsername);
+        if (user != null && !PasswordUtil.checkPassword(currentPassword, user.getPasswordHash())) {
+            showError("Mật khẩu hiện tại không đúng. Vui lòng kiểm tra lại.");
+            txtCurrentPassword.requestFocus();
+            return;
+        }
+        
+        /* 5. OTP hợp lệ và mật khẩu hiện tại đúng → đổi mật khẩu với xác thực OTP */
+        boolean success = userService.changePasswordWithOTP(currentUsername,
                 currentPassword,
-                newPassword);
+                newPassword,
+                otpCode);
         if (success) {
             showSuccess("Đổi mật khẩu thành công!");
             // reset mọi thứ
@@ -434,7 +476,10 @@ public class ProfileController {
             otpContainer.setManaged(false);
             otpContainer.setVisible(false);
         } else {
-            showError("Không thể đổi mật khẩu. Vui lòng kiểm tra lại mật khẩu hiện tại.");
+            // Hiển thị thông báo lỗi chi tiết hơn
+            showError("Không thể đổi mật khẩu. Mã OTP không hợp lệ hoặc đã hết hạn.");
+            // Focus vào trường OTP để người dùng nhập lại
+            txtOTP.requestFocus();
         }
     }
 
@@ -450,7 +495,11 @@ public class ProfileController {
             scene.setRoot(root);
             
             // Lấy controller của chat.fxml, gán username và yêu cầu cập nhật
-            ChatController chatCtrl = loader.getController();
+            ChatControllerRefactored chatCtrl = loader.getController();
+            
+            // Liên kết controller với service
+            ServiceLocator.chat().bindRefactoredUI(chatCtrl);
+            
             chatCtrl.setCurrentUser(currentUsername);
             
             // Yêu cầu danh sách user online mới từ server
@@ -494,4 +543,4 @@ public class ProfileController {
             lblStatus.setText(message + ": " + e.getMessage());
         });
     }
-} 
+}

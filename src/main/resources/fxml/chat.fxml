@@ -7,7 +7,8 @@
 <?import javafx.scene.shape.Circle?>
 <?import javafx.geometry.Insets?>
 
-<SplitPane fx:id="rootSplit" dividerPositions="0.22" stylesheets="@/css/chat.css" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="app.controller.ChatController">
+<SplitPane fx:id="rootSplit" dividerPositions="0.22" stylesheets="@/css/chat.css" xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="app.controller.chat.ChatControllerRefactored">
+
 
     <!-- ======= PANE 0: Vùng người dùng online ======= -->
     <VBox prefWidth="260" minWidth="225" maxWidth="340" styleClass="sidebar">
@@ -64,8 +65,8 @@
 
         <!-- Tab Bạn bè/Group -->
         <TabPane fx:id="tabPane" tabClosingPolicy="UNAVAILABLE" VBox.vgrow="ALWAYS">
-            <!-- Bạn bè -->
-            <Tab text="Bạn bè" styleClass="custom-tab">
+            <!-- Gần đây -->
+            <Tab text="Gần đây" styleClass="custom-tab">
                 <VBox spacing="6" styleClass="tab-content">
                     <TextField fx:id="searchField" promptText="Tìm kiếm bạn bè hoặc người dùng..." styleClass="search-field"/>
                     <!-- ListView đoạn chat gần đây, mặc định hiển thị -->
@@ -110,9 +111,12 @@
 
         <!-- Messages area -->
         <ScrollPane fx:id="scrollPane" fitToWidth="true" hbarPolicy="NEVER" vbarPolicy="ALWAYS" VBox.vgrow="ALWAYS" styleClass="messages-scroll">
-            <content>
+            <StackPane>
                 <VBox fx:id="messagesContainer" spacing="10" styleClass="messages-container" />
-            </content>
+                <VBox fx:id="welcomeScreen" spacing="20" alignment="CENTER" visible="true" managed="true" styleClass="welcome-screen">
+                    <!-- Welcome screen content will be set in the controller -->
+                </VBox>
+            </StackPane>
         </ScrollPane>
 
         <!-- Input area -->
@@ -125,6 +129,22 @@
                         </image>
                     </ImageView>
                 </graphic>
+                <tooltip>
+                    <Tooltip text="Đính kèm file" />
+                </tooltip>
+            </Button>
+
+            <Button fx:id="btnAttachImage" onAction="#onAttachImage" styleClass="icon-btn">
+                <graphic>
+                    <ImageView fitWidth="20" preserveRatio="true">
+                        <image>
+                            <Image url="@/icons/image.png" />
+                        </image>
+                    </ImageView>
+                </graphic>
+                <tooltip>
+                    <Tooltip text="Gửi hình ảnh" />
+                </tooltip>
             </Button>
 
             <Button fx:id="btnEmoji" onAction="#onChooseEmoji" styleClass="icon-btn">

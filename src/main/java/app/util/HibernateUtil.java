@@ -19,4 +19,7 @@ public class HibernateUtil {
     public static SessionFactory getSessionFactory() {
         return sessionFactory;
     }
+    public static void initialize() {
+        getSessionFactory();  // Ensures the session factory is created
+    }
 }

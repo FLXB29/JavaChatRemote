@@ -11,6 +11,8 @@ public enum PacketType {
     HISTORY,        // phản hồi lịch sử
     CREATE_GROUP,   // tạo nhóm chat
     GROUP_MSG,      // tin nhắn nhóm
+    GROUP_CREATED,  // Thêm mới - Server gửi về khi nhóm được tạo thành công
+
     CONV_LIST,      // danh sách conversation
     JOIN_CONV,      // tham gia conversation
     FILE_META,      // thông tin file (name, size)
@@ -29,5 +31,6 @@ public enum PacketType {
     FRIEND_STATUS,        // trả về trạng thái bạn bè
     FRIEND_REQUEST_NOTIFICATION,  // thông báo có lời mời kết bạn mới
     FRIEND_REQUEST_ACCEPTED,      // thông báo lời mời được chấp nhận
-    FRIEND_REQUEST_REJECTED       // thông báo lời mời bị từ chối
+    FRIEND_REQUEST_REJECTED,      // thông báo lời mời bị từ chối
+    GET_CONV_LIST           // Lấy danh sách cuộc trò chuyện
 }

@@ -144,5 +144,10 @@ public class User {
         this.lastActiveAt = lastActiveAt;
     }
 
+    @Override
+    public String toString() {
+        return this.username; // Hoặc return this.fullName; nếu bạn muốn hiển thị tên đầy đủ
+    }
+
     // ... getter, setter khác ...
 }

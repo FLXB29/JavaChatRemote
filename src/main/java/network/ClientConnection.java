@@ -11,11 +11,14 @@ import javafx.collections.transformation.SortedList;
 import javafx.scene.control.ListView;
 import javafx.scene.image.Image;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.*;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -101,7 +104,31 @@ public class ClientConnection {
         this.onConvJoined = h;
     }
     public void setOnPendingListReceived(Consumer<String> cb){
-        this.onPendingListReceived = cb;
+        // Mới: Xử lý JSON trước khi gửi đến callback
+        this.onPendingListReceived = json -> {
+            try {
+                // Kiểm tra xem JSON có hợp lệ không, nếu không sẽ gửi lại chuỗi trống
+                if (json == null || json.isEmpty() || "[]".equals(json.trim())) {
+                    System.out.println("[DEBUG] Pending requests list is empty");
+                    if (cb != null) cb.accept("[]"); // Gửi mảng trống
+                    return;
+                }
+                
+                // Log debug
+                System.out.println("[DEBUG] Processing pending friend requests JSON: " + 
+                    (json.length() > 100 ? json.substring(0, 97) + "..." : json));
+                
+                // Chuyển tiếp JSON đến callback
+                if (cb != null) {
+                    cb.accept(json);
+                }
+            } catch (Exception e) {
+                System.err.println("[ERROR] Error processing pending requests JSON: " + e.getMessage());
+                e.printStackTrace();
+                // Gửi một mảng trống trong trường hợp lỗi
+                if (cb != null) cb.accept("[]");
+            }
+        };
     }
 
 
@@ -130,17 +157,55 @@ public class ClientConnection {
     }
 
     private void handleConnectionError() {
+        System.err.println("Connection error: " + (socket == null ? "null socket" : "socket closed"));
+        
         if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
             reconnectAttempts++;
             System.out.println("Attempting to reconnect... (Attempt " + reconnectAttempts + ")");
+            
             try {
-                Thread.sleep(5000); // Wait 5 seconds before retrying
-                connect();
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
+                // Đảm bảo socket cũ đã đóng
+                if (socket != null && !socket.isClosed()) {
+                    socket.close();
+                }
+                
+                // Đợi một chút trước khi thử kết nối lại
+                Thread.sleep(2000); // Đợi 2 giây
+                
+                // Kết nối lại
+                socket = new Socket(host, port);
+                socket.setSoTimeout(SOCKET_TIMEOUT);
+                out = new ObjectOutputStream(socket.getOutputStream());
+                in = new ObjectInputStream(socket.getInputStream());
+                
+                // Khởi động lại thread lắng nghe
+                new Thread(this::listen).start();
+                
+                // Đăng nhập lại nếu có username
+                if (currentUser != null && !currentUser.isBlank()) {
+                    login(currentUser);
+                    System.out.println("[INFO] Re-logged in as: " + currentUser);
+                }
+                
+                // Reset counter nếu kết nối thành công
+                reconnectAttempts = 0;
+                
+                System.out.println("[INFO] Reconnected successfully");
+            } catch (IOException | InterruptedException e) {
+                System.err.println("[ERROR] Failed to reconnect: " + e.getMessage());
+                
+                // Lên lịch thử kết nối lại sau một khoảng thời gian
+                new Thread(() -> {
+                    try {
+                        Thread.sleep(5000); // Đợi 5 giây
+                        handleConnectionError(); // Thử lại
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                    }
+                }).start();
             }
         } else {
-            System.out.println("Max reconnection attempts reached. Please check your connection.");
+            System.err.println("Max reconnection attempts reached. Please restart the application.");
         }
     }
 
@@ -190,12 +255,19 @@ public class ClientConnection {
     }
     // Trong ClientConnection
     public void sendFile(long conversationId, String fileName, byte[] data) {
-        // header format: "convId:fileName"
-        String header = conversationId + ":" + fileName;
-        sendPacket(new Packet(PacketType.FILE, header, data));
+        try {
+            // header format: "convId:fileName"
+            String header = conversationId + ":" + fileName;
+            sendPacket(new Packet(PacketType.FILE, header, data));
+            System.out.println("[DEBUG] File sent successfully: " + fileName + " to conversation: " + conversationId);
+        } catch (RuntimeException e) {
+            System.err.println("[ERROR] Failed to send file: " + e.getMessage());
+            handleConnectionError();
+        }
     }
     private void sendPacket(Packet p) {
         if (out == null) {
+            System.err.println("[ERROR] Connection not initialized");
             throw new RuntimeException("Connection not initialized");
         }
 
@@ -204,185 +276,262 @@ public class ClientConnection {
             out.writeObject(p);
             out.flush();
         } catch (IOException e) {
-            System.out.println("[ERROR] Failed to send packet: " + e.getMessage());
-            throw new RuntimeException("Failed to send packet", e);
+            System.err.println("[ERROR] Failed to send packet: " + e.getMessage());
+            // Đánh dấu kết nối bị lỗi để có thể reconnect
+            try {
+                if (socket != null && !socket.isClosed()) {
+                    socket.close();
+                }
+            } catch (IOException ignored) {}
+            
+            throw new RuntimeException("Failed to send packet: " + e.getMessage(), e);
         }
     }
 
     private void listen() {
         try {
-            while (true) {
-                Packet p = (Packet) in.readObject();
-
-                // Debug output for tracking received packets
-                System.out.println("[RECV] " + p.type() + " header=" + p.header());
-
-                switch (p.type()) {
-                    case MSG -> {
-                        String from = p.header();
-                        String content = new String(p.payload());
-                        if (onTextReceived != null) {
-                            onTextReceived.accept(from, content);
-                        }
-                    }
-
-                    case FILE -> {
-                        String[] parts = p.header().split(":", 2);
-                        String from = parts[0];
-                        String filename = parts[1];
-                        if (onFileReceived != null) {
-                            onFileReceived.accept(from, filename, p.payload());
-                        }
-                    }
-
-                    case ACK -> {
-                        String header = p.header();
-                        System.out.println("[DEBUG] Nhận ACK: " + header);
-
-                        if ("LOGIN_OK".equals(header)) {
-                            if (currentUser != null) {
-                                // Request pending friend requests after login
-                                requestPendingFriendRequests(currentUser);
-
-                                // Request all avatars for online users
-                                requestUserList();
-                            }
-
-                            if (onLoginSuccess != null) {
-                                Platform.runLater(onLoginSuccess);
-                            }
-                        }
-                    }
-
-                    case USRLIST -> {
-                        if (onUserListReceived != null) {
-                            String userStr = new String(p.payload());
-                            System.out.println("[DEBUG] USRLIST payload=" + userStr);
-
-                            String[] arr = userStr.split(",");
-                            onUserListReceived.accept(arr);
-
-                            // Request avatars for all online users
-                            for (String username : arr) {
-                                if (username != null && !username.isBlank() && !username.equals(currentUser)) {
-                                    requestAvatar(username);
-                                }
-                            }
-                        }
-                    }
-
-                    case AVATAR_DATA -> {
-                        String username = p.header();
-                        byte[] data = p.payload();
-
-                        // Process avatar data
-                        handleNewAvatar(username, data);
-
-                        // Notify UI through callback
-                        if (onAvatarUpdated != null) {
-                            onAvatarUpdated.accept(username, data);
-                        }
-                    }
-
-                    case PM -> {
-                        String from = p.header();
-                        String content = new String(p.payload());
-                        if (onPrivateMsgReceived != null) {
-                            onPrivateMsgReceived.accept(from, content);
-                        }
-                    }
-
-                    case CONV_LIST -> {
-                        if (onConvList != null) {
-                            onConvList.accept(new String(p.payload()));
-                        }
-                    }
-
-                    case HISTORY -> {
-                        String header = p.header();
-                        String json = new String(p.payload());
-
-                        try {
-                            long cid = Long.parseLong(header);
-                            if (onHistory != null) onHistory.accept(cid, json);
-                            if (onConvJoined != null) onConvJoined.onJoined(cid);
-                        } catch (NumberFormatException ex) {
-                            if (onHistoryReceived != null) onHistoryReceived.accept(json);
-                        }
-                    }
-
-                    case GROUP_MSG -> {
-                        long convId = Long.parseLong(p.header());
-                        String[] parts = new String(p.payload()).split("\\|", 2);
-                        if (onGroupMsg != null && parts.length == 2) {
-                            onGroupMsg.accept(convId, parts[0], parts[1]);
-                        }
-                    }
-
-                    case FILE_META -> {
-                        String[] pa = new String(p.payload()).split("\\|");
-                        if (onFileMeta != null && pa.length >= 4) {
-                            String idFlag = (pa.length >= 5) ? pa[3] + "|" + pa[4] : pa[3];
-                            onFileMeta.accept(pa[0], pa[1], Long.parseLong(pa[2]), idFlag);
-                        }
-                    }
-
-                    case FILE_CHUNK -> {
-                        String[] h = p.header().split(":");
-                        if (onFileChunk != null && h.length >= 3) {
-                            onFileChunk.accept(h[0], Integer.parseInt(h[1]), "1".equals(h[2]), p.payload());
-                        }
-                    }
-
-                    case FILE_THUMB -> {
-                        String id = p.header();
-                        if (onFileThumb != null) {
-                            onFileThumb.accept(id, p.payload());
-                        }
-                    }
-
-                    case FRIEND_REQUEST_NOTIFICATION, FRIEND_REQUEST -> {
-                        String fromUser = p.header();
-                        if (onFriendRequestReceived != null) {
-                            onFriendRequestReceived.onFriendRequest(fromUser);
-                        }
-                    }
-
-                    case FRIEND_REQUEST_ACCEPTED -> {
-                        String[] parts = p.header().split("->");
-                        if (parts.length == 2 && onFriendRequestAccepted != null) {
-                            onFriendRequestAccepted.accept(parts[0], parts[1]);
-                        }
-                    }
-
-                    case FRIEND_REQUEST_REJECTED -> {
-                        String[] parts = p.header().split("->");
-                        if (parts.length == 2 && onFriendRequestRejected != null) {
-                            onFriendRequestRejected.accept(parts[0], parts[1]);
-                        }
-                    }
-
-                    case FRIEND_PENDING_LIST -> {
-                        if (onPendingListReceived != null) {
-                            String json = new String(p.payload());
-                            onPendingListReceived.accept(json);
-                        }
-                    }
-
-                    default -> {
-                        System.out.println("[WARN] Unhandled packet type: " + p.type());
-                    }
+            while (socket != null && !socket.isClosed()) {
+                try {
+                    Packet packet = (Packet) in.readObject();
+                    
+                    if (packet == null) continue;
+                    
+                    // Debug output for tracking received packets
+                    System.out.println("[RECV] " + packet.type() + " header=" + packet.header());
+                    
+                    processPacket(packet);
+                } catch (ClassNotFoundException e) {
+                    System.err.println("[ERROR] Invalid packet format: " + e.getMessage());
+                } catch (IOException e) {
+                    System.err.println("[ERROR] Connection error while reading: " + e.getMessage());
+                    handleConnectionError();
+                    break; // Thoát khỏi vòng lặp khi có lỗi kết nối
                 }
             }
         } catch (Exception e) {
-            System.out.println("Disconnected from server: " + e.getMessage());
+            System.err.println("[ERROR] Fatal error in listen thread: " + e.getMessage());
             e.printStackTrace();
             handleConnectionError();
         }
     }
+    
+    private void processPacket(Packet packet) {
+        try {
+            switch (packet.type()) {
+                case ACK -> {
+                    String status = packet.header();
+                    System.out.println("[ACK] " + status);
+
+                    if (status.equals("LOGIN_OK")) {
+                        // Đặt tên người dùng nếu cần
+                        if (currentUser == null || currentUser.isBlank()) {
+                            System.out.println("[WARN] currentUser null in LOGIN_SUCCESS callback");
+                        }
+
+                        if (onLoginSuccess != null) {
+                            Platform.runLater(onLoginSuccess);
+                        }
+                    }
+
+                    // Handle friendship status
+                    if (status.startsWith("FRIEND_REQUEST_")) {
+                        System.out.println("[ACK] Friend request status: " + status);
+                    }
+
+                    if (status.startsWith("FRIEND_ACCEPT_")) {
+                        if (status.equals("FRIEND_ACCEPT_SUCCESS")) {
+                            System.out.println("[ACK] Friend request accepted successfully");
+                        } else {
+                            System.out.println("[ACK] Friend request accept failed: " + status);
+                        }
+                    }
+                }
+
+                case MSG -> {
+                    String sender = packet.header();
+                    String content = new String(packet.payload());
+
+                    // Debug để phát hiện các vấn đề với username
+                    if (sender == null || sender.isBlank()) {
+                        System.err.println("[ERROR] Received MSG packet with null/empty sender");
+                    }
+                    
+                    if (currentUser == null || currentUser.isBlank()) {
+                        System.err.println("[ERROR] currentUser is null when processing MSG packet from " + sender);
+                    }
+
+                    if (onTextReceived != null) {
+                        onTextReceived.accept(sender, content);
+                    }
+                }
+
+                case FILE -> {
+                    String[] parts = packet.header().split(":", 2);
+                    String from = parts[0];
+                    String filename = parts[1];
+                    if (onFileReceived != null) {
+                        onFileReceived.accept(from, filename, packet.payload());
+                    }
+                }
+
+                case FILE_META -> {
+                    String[] hdr = packet.header().split(":");
+                    long convId = Long.parseLong(hdr[0]);
+                    String parts = new String(packet.payload());
+                    String[] arr  = parts.split("\\|");
+                    String from   = arr[0];
+                    String name   = arr[1];
+                    long   size   = Long.parseLong(arr[2]);
+                    String id     = arr[3];
+                    String flag   = arr.length>4 ? arr[4] : "N";
+                    if(onFileMeta != null)
+                        onFileMeta.accept(from, name, size, id+"|"+flag);
+                }
+
+                case FILE_CHUNK -> {
+                    String[] hdr = packet.header().split(":");
+                    String id  = hdr[0];
+                    int seq    = Integer.parseInt(hdr[1]);
+                    boolean last = "1".equals(hdr[2]);
+                    if(onFileChunk != null)
+                        onFileChunk.accept(id, seq, last, packet.payload());
+                }
+
+                case FILE_THUMB -> {
+                    String id = packet.header();
+                    if(onFileThumb!=null)
+                        onFileThumb.accept(id, packet.payload());
+                }
+
+                case USRLIST -> {
+                    String userStr = new String(packet.payload());
+                    System.out.println("[DEBUG] USRLIST payload=" + userStr);
+                    String[] users = userStr.split(",");
+
+                    if (onUserListReceived != null) {
+                        onUserListReceived.accept(users);
+                    }
+
+                    // Request avatars for all online users
+                    for (String username : users) {
+                        if (username != null && !username.isBlank() && !username.equals(currentUser)) {
+                            requestAvatar(username);
+                        }
+                    }
+                }
+
+                case PM -> {
+                    String from = packet.header();
+                    String content = new String(packet.payload());
+
+                    if (onPrivateMsgReceived != null) {
+                        onPrivateMsgReceived.accept(from, content);
+                    }
+                }
+
+                case HISTORY -> {
+                    String header = packet.header();
+                    String json = new String(packet.payload());
+
+                    try {
+                        long cid = Long.parseLong(header);
+                        if (onHistory != null) onHistory.accept(cid, json);
+                        if (onConvJoined != null) onConvJoined.onJoined(cid);
+                    } catch (NumberFormatException ex) {
+                        if (onHistoryReceived != null) onHistoryReceived.accept(json);
+                    }
+                }
+
+                case CONV_LIST -> {
+                    String json = new String(packet.payload());
+                    if(onConvList!=null) onConvList.accept(json);
+                }
+
+                case GROUP_MSG -> {
+                    long convId = Long.parseLong(packet.header());
+                    String[] parts = new String(packet.payload()).split("\\|", 2);
+                    if (onGroupMsg != null && parts.length == 2) {
+                        onGroupMsg.accept(convId, parts[0], parts[1]);
+                    }
+                }
+
+                case FRIEND_REQUEST, FRIEND_REQUEST_NOTIFICATION -> {
+                    String fromUser = packet.header();
+                    if (onFriendRequestReceived != null) {
+                        onFriendRequestReceived.onFriendRequest(fromUser);
+                    }
+                }
+
+                case FRIEND_PENDING_LIST -> {
+                    String jsonData = new String(packet.payload());
+                    if (onPendingListReceived != null) {
+                        onPendingListReceived.accept(jsonData);
+                    }
+                }
+
+                case GROUP_CREATED -> {
+                    String[] parts = packet.header().split(":");
+                    
+                    // Kiểm tra mảng parts có đủ phần tử không để tránh IndexOutOfBoundsException
+                    if (parts.length < 2) {
+                        System.err.println("[ERROR] Invalid GROUP_CREATED header format: " + packet.header());
+                        return;
+                    }
+                    
+                    try {
+                        String groupName = parts[0];
+                        long groupId = Long.parseLong(parts[1]);
+                        System.out.println("[DEBUG] Received GROUP_CREATED: " + groupName + " with ID: " + groupId);
+                        
+                        if (onGroupCreated != null) {
+                            onGroupCreated.accept(groupName, groupId);
+                        }
+                    } catch (NumberFormatException e) {
+                        System.err.println("[ERROR] Invalid group ID format in header: " + packet.header());
+                        e.printStackTrace();
+                    }
+                }
+
+                case AVATAR_DATA -> {
+                    String username = packet.header();
+                    if (onAvatarUpdated != null) {
+                        handleNewAvatar(username, packet.payload());
+                        onAvatarUpdated.accept(username, packet.payload());
+                    } else {
+                        // Vẫn lưu avatar ngay cả khi không có callback
+                        handleNewAvatar(username, packet.payload());
+                    }
+                }
+
+                case FRIEND_ACCEPT -> {
+                    String[] parts = packet.header().split("->");
+                    if (parts.length == 2 && onFriendRequestAccepted != null) {
+                        onFriendRequestAccepted.accept(parts[0], parts[1]);
+                    }
+                }
+
+                case FRIEND_REJECT -> {
+                    String[] parts = packet.header().split("->");
+                    if (parts.length == 2 && onFriendRequestRejected != null) {
+                        onFriendRequestRejected.accept(parts[0], parts[1]);
+                    }
+                }
+
+                default -> System.out.println("[WARN] Unhandled packet type: " + packet.type());
+            }
+        } catch (Exception e) {
+            System.err.println("[ERROR] Error processing packet: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+    /**
+     * Yêu cầu lịch sử tin nhắn của một cuộc trò chuyện
+     * @param fromUser Người dùng yêu cầu
+     * @param target Đích (tên người dùng hoặc nhóm)
+     */
     public void requestHistory(String fromUser, String target) {
         if (fromUser == null || target == null) {
-            System.out.println("[ERROR] Cannot request history: null parameters");
+            System.err.println("[ERROR] Cannot request history: null parameters");
             return;
         }
 
@@ -391,8 +540,9 @@ public class ClientConnection {
             System.out.println("[DEBUG] Requesting history: " + header);
             Packet req = new Packet(PacketType.GET_HISTORY, header, null);
             sendPacket(req);
+            System.out.println("[DEBUG] History request sent for: " + target);
         } catch (Exception e) {
-            System.out.println("[ERROR] Failed to request history: " + e.getMessage());
+            System.err.println("[ERROR] Failed to request history: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -421,12 +571,9 @@ public class ClientConnection {
         // Send to server
         sendPacket(new Packet(PacketType.AVATAR_UPLOAD, f.getName(), data));
 
-        // Broadcast notification to all clients that avatar has changed
-        // (this is actually handled by the server automatically)
-
         // Also update local avatar cache immediately
         if (currentUser != null) {
-            Path cacheDir = Paths.get("avatar_cache");
+            Path cacheDir = Paths.get(app.util.PathUtil.getAvatarCacheDirectory());
             if (!Files.exists(cacheDir)) {
                 Files.createDirectories(cacheDir);
             }
@@ -483,8 +630,25 @@ public class ClientConnection {
 
     public void setOnConvList(Consumer<String> cb){ this.onConvList = cb; }
     public void setOnHistory(BiConsumer<Long,String> cb){ this.onHistory = cb; }
+    
+    /**
+     * Tham gia vào một cuộc trò chuyện
+     * @param convId ID của cuộc trò chuyện
+     */
     public void joinConv(long convId){
-        sendPacket(new Packet(PacketType.JOIN_CONV,String.valueOf(convId),null));
+        try {
+            System.out.println("[DEBUG] Joining conversation with ID: " + convId);
+            if (convId <= 0) {
+                System.err.println("[ERROR] Invalid conversation ID: " + convId);
+                return;
+            }
+            
+            sendPacket(new Packet(PacketType.JOIN_CONV, String.valueOf(convId), null));
+            System.out.println("[DEBUG] JOIN_CONV packet sent for conversation ID: " + convId);
+        } catch (Exception e) {
+            System.err.println("[ERROR] Failed to join conversation: " + e.getMessage());
+            e.printStackTrace();
+        }
     }
 
     public void setOnFileMeta(FileMetaConsumer c){ this.onFileMeta = c; }
@@ -547,36 +711,40 @@ public class ClientConnection {
         try {
             System.out.println("[DEBUG] Processing avatar for " + username + ", size: " + data.length + " bytes");
 
-            // Create avatar cache directory if it doesn't exist
-            Path cacheDir = Paths.get("avatar_cache");
-            if (!Files.exists(cacheDir)) {
-                Files.createDirectories(cacheDir);
-            }
-
-            // Save avatar file
-            Path avatarFile = cacheDir.resolve(username + ".png");
-            Files.write(avatarFile, data);
-            System.out.println("[DEBUG] Saved avatar for " + username + " to " + avatarFile);
-
-            // Update user information
-            User user = ServiceLocator.userService().getUser(username);
-            if (user != null) {
-                // Update avatar info in the User object
-                user.setAvatarPath(avatarFile.toString());
-                user.setUseDefaultAvatar(false);
-
-                // Update user in database
-                ServiceLocator.userService().updateAvatar(username, avatarFile.toFile());
-
-                // Update in our maps
-                if (onlineUsers.containsKey(username)) {
-                    onlineUsers.put(username, user);
+            // Kiểm tra thời gian cập nhật gần nhất
+            File cacheFile = new File(app.util.PathUtil.getAvatarCacheDirectory(), username + ".png");
+            boolean shouldUpdate = true;
+            
+            // Nếu file cache đã tồn tại và được cập nhật trong vòng 1 phút, bỏ qua
+            if (cacheFile.exists()) {
+                long lastModified = cacheFile.lastModified();
+                long currentTime = System.currentTimeMillis();
+                
+                if (currentTime - lastModified < 60000) { // 1 phút
+                    System.out.println("[DEBUG] User " + username + " avatar was recently updated, skipping");
+                    shouldUpdate = false;
                 }
-
-                System.out.println("[DEBUG] Updated avatar for user: " + username);
-            } else {
-                System.out.println("[WARN] Cannot find user for avatar update: " + username);
             }
+            
+            if (shouldUpdate) {
+                // Sử dụng utility để lưu avatar
+                boolean success = app.util.AvatarFixUtil.saveAvatarFromBytes(username, data);
+                
+                if (success) {
+                    System.out.println("[DEBUG] Successfully updated avatar for " + username);
+                    
+                    // Cập nhật user trong maps nếu cần
+                    if (onlineUsers.containsKey(username)) {
+                        User user = ServiceLocator.userService().getUser(username);
+                        if (user != null) {
+                            onlineUsers.put(username, user);
+                        }
+                    }
+                } else {
+                    System.out.println("[WARN] Failed to update avatar for " + username);
+                }
+            }
+            
         } catch (Exception e) {
             System.out.println("[ERROR] Failed to handle avatar: " + e.getMessage());
             e.printStackTrace();
@@ -612,18 +780,32 @@ public class ClientConnection {
     }
 
     public void sendFriendRequest(String from, String to) {
-        if (from == null || to == null || from.isBlank() || to.isBlank()) {
-            System.out.println("[ERROR] Invalid friend request parameters - from: " + from + ", to: " + to);
-            throw new IllegalArgumentException("Invalid friend request parameters");
+        String actualFrom = from;
+        
+        // Nếu from là null, thử dùng currentUser thay thế
+        if (actualFrom == null || actualFrom.isBlank()) {
+            if (currentUser != null && !currentUser.isBlank()) {
+                actualFrom = currentUser;
+                System.out.println("[INFO] Using currentUser '" + currentUser + "' instead of null 'from' parameter");
+            } else {
+                System.out.println("[ERROR] Invalid friend request parameters - from: " + from + ", to: " + to + ", currentUser is also null");
+                throw new IllegalArgumentException("Invalid friend request parameters - sender is null");
+            }
+        }
+        
+        // Kiểm tra tham số to
+        if (to == null || to.isBlank()) {
+            System.out.println("[ERROR] Invalid friend request parameters - to: " + to);
+            throw new IllegalArgumentException("Invalid friend request parameters - recipient is null");
         }
 
-        if (from.equals(to)) {
+        if (actualFrom.equals(to)) {
             System.out.println("[ERROR] Cannot send friend request to yourself");
             throw new IllegalArgumentException("Cannot send friend request to yourself");
         }
 
-        System.out.println("[DEBUG] Sending friend request from " + from + " to " + to);
-        String header = from + "->" + to;
+        System.out.println("[DEBUG] Sending friend request from " + actualFrom + " to " + to);
+        String header = actualFrom + "->" + to;
 
         try {
             sendPacket(new Packet(PacketType.FRIEND_REQUEST, header, null));
@@ -689,6 +871,18 @@ public class ClientConnection {
         } catch (Exception e) {
             System.out.println("[ERROR] Failed to check private conversation: " + e.getMessage());
             e.printStackTrace();
+        }
+    }
+
+    /**
+     * Yêu cầu danh sách các cuộc trò chuyện
+     */
+    public void requestConversationList() {
+        try {
+            System.out.println("[SEND] Yêu cầu danh sách cuộc trò chuyện");
+            sendPacket(new Packet(PacketType.GET_CONV_LIST, "", new byte[0]));
+        } catch (Exception e) {
+            System.err.println("Lỗi khi yêu cầu danh sách cuộc trò chuyện: " + e.getMessage());
         }
     }
 
